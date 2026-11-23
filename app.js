@@ -40,6 +40,7 @@
     grafico: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-8"/></svg>',
     baixar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
     rota: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16"/></svg>',
+    atualizar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
     mais: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
   };
 
@@ -363,12 +364,15 @@
         '<nav class="menu">' + menu + '</nav>' +
         '<div class="fundo-menu"></div>' +
         '<main class="conteudo"></main>' +
-      '</div>';
+      '</div>' +
+      barraInferiorHtml(rotaAtual);
 
     const nav = $app.querySelector('.menu');
     const fundo = $app.querySelector('.fundo-menu');
     const alternar = function (abrir) { nav.classList.toggle('aberto', abrir); fundo.classList.toggle('aberto', abrir); };
     $app.querySelector('.botao-menu').onclick = function () { alternar(true); };
+    const mais = $app.querySelector('[data-mais]');
+    if (mais) mais.onclick = function () { alternar(true); };
     fundo.onclick = function () { alternar(false); };
     nav.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', function () { alternar(false); }); });
     $app.querySelector('[data-sair]').onclick = function () {
@@ -388,6 +392,20 @@
     document.onclick = function () { painel.classList.add('oculto'); };
     atualizarSino(false);
     return $app.querySelector('.conteudo');
+  }
+
+  /** Barra fixa embaixo (só no celular): Início, Transferências, Registrar (meio), Rota, Mais. */
+  function barraInferiorHtml(rotaAtual) {
+    const item = function (rota, texto, icone, classe) {
+      return '<a href="' + rota + '" class="' + (classe || '') + (rotaAtual === rota ? ' ativo' : '') + '">' + ICONES[icone] + '<span>' + texto + '</span></a>';
+    };
+    return '<nav class="barra-inferior">' +
+      item('#/inicio', 'Início', 'inicio') +
+      item('#/transferencias', 'Lista', 'lista') +
+      item('#/registrar', 'Registrar', 'registrar', 'principal') +
+      item('#/rota', 'Rota', 'rota') +
+      '<button type="button" data-mais>' + ICONES.menu + '<span>Mais</span></button>' +
+    '</nav>';
   }
 
   /* =========================================================
@@ -490,7 +508,8 @@
   }
 
   /** Lista de arquivos. lado: 'origem' mostra "De ...", 'destino' mostra "Para ...", 'ambos' mostra os dois. */
-  function listaArquivosHtml(itens, lado, vazio) {
+  function listaArquivosHtml(itens, lado, vazio, opcoes) {
+    opcoes = opcoes || {};
     if (!itens || !itens.length) return '<div class="vazio pequeno">' + esc(vazio || 'Nenhum arquivo.') + '</div>';
     return '<div class="lista-arquivos">' + itens.map(function (t) {
       let rota;
@@ -503,11 +522,17 @@
       if (t.volumes_pendentes > 0) marcas.push('<span class="selo erro">' + t.volumes_pendentes + (t.volumes_pendentes > 1 ? ' volumes faltando' : ' volume faltando') + '</span>');
       if (t.ocorrencia) marcas.push('<span class="selo erro">Ocorrência</span>');
       if (t.atrasado) marcas.push('<span class="selo aviso">Atrasado</span>');
-      return '<a href="#/registrar?arq=' + encodeURIComponent(t.arquivo) + '" class="item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '') + '">' +
+      const conteudo =
         '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + seloSituacao(t.status) + '</div>' +
         '<div class="item-rota">' + rota + ' <span class="item-tempo">· ' + esc(tempoTexto(t.dias)) + '</span></div>' +
-        (marcas.length ? '<div class="lista-chips">' + marcas.join('') + '</div>' : '') +
-      '</a>';
+        (marcas.length ? '<div class="lista-chips">' + marcas.join('') + '</div>' : '');
+      const classe = 'item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '');
+      const link = '#/registrar?arq=' + encodeURIComponent(t.arquivo);
+      if (opcoes.recebi && t.status === 'COM_MOTORISTA') {
+        return '<div class="' + classe + ' com-acao"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
+          '<button type="button" class="botao-recebi" data-recebi="' + esc(t.arquivo) + '">' + ICONES.certo + 'Recebi</button></div>';
+      }
+      return '<a href="' + link + '" class="' + classe + '">' + conteudo + '</a>';
     }).join('') + '</div>';
   }
 
@@ -565,41 +590,182 @@
     return '<div class="mensagem info">Os números passam a aparecer quando o registro das transferências começar (fase 2).</div>';
   }
 
+  /* ---------- Abertura instantânea: últimos números guardados no aparelho ---------- */
+  function lerResumoGuardado() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CHAVE_RESUMO) || 'null');
+      return c && c.usuario_id === Estado.usuario.id ? c : null;
+    } catch (e) { return null; }
+  }
+
+  function guardarResumoNoAparelho(resumo) {
+    try { localStorage.setItem(CHAVE_RESUMO, JSON.stringify({ quando: new Date().toISOString(), usuario_id: Estado.usuario.id, resumo: resumo })); } catch (e) { /* ignora */ }
+  }
+
+  /** Puxar a tela para baixo (no topo) atualiza. */
+  function ativarPuxarParaAtualizar(el, atualizar) {
+    let inicio = null;
+    let distancia = 0;
+    const indicador = document.createElement('div');
+    indicador.className = 'puxar-atualizar';
+    indicador.innerHTML = '<div class="girando"></div><span>Puxe para atualizar</span>';
+    el.prepend(indicador);
+    el.addEventListener('touchstart', function (e) {
+      inicio = window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+      distancia = 0;
+    }, { passive: true });
+    el.addEventListener('touchmove', function (e) {
+      if (inicio === null) return;
+      distancia = Math.max(0, e.touches[0].clientY - inicio);
+      if (distancia > 10) {
+        indicador.style.height = Math.min(70, distancia * 0.5) + 'px';
+        indicador.classList.toggle('pronto', distancia > 110);
+        indicador.querySelector('span').textContent = distancia > 110 ? 'Solte para atualizar' : 'Puxe para atualizar';
+      }
+    }, { passive: true });
+    el.addEventListener('touchend', function () {
+      if (inicio !== null && distancia > 110) atualizar(true);
+      inicio = null;
+      indicador.style.height = '0';
+      indicador.classList.remove('pronto');
+    });
+  }
+
   async function paginaInicio(el) {
     const u = Estado.usuario;
     el.innerHTML =
-      '<h2>Olá, ' + esc(u.nome.split(' ')[0]) + '!</h2>' +
-      '<p class="descricao">' + esc(PERFIS[u.perfil]) + (u.loja_id ? ' · ' + esc(nomeLoja(u.loja_id)) : ' · Todas as lojas') + '</p>' +
-      '<div class="corpo-inicio">' + carregandoHtml('Buscando seus arquivos...') + '</div>';
+      '<div class="cabecalho-inicio"><div><h2>Olá, ' + esc(u.nome.split(' ')[0]) + '!</h2>' +
+      '<p class="descricao">' + esc(PERFIS[u.perfil]) + (u.loja_id ? ' · ' + esc(nomeLoja(u.loja_id)) : ' · Todas as lojas') + '</p></div>' +
+      '<button type="button" class="atualizado" data-atualizar title="Atualizar"></button></div>' +
+      '<div class="corpo-inicio"></div>';
     const corpo = el.querySelector('.corpo-inicio');
+    const info = el.querySelector('.atualizado');
+    let ultimo = null;
 
-    const carregar = async function (silencioso) {
-      let resumo;
+    const desenhar = function (resumo) {
+      ultimo = resumo;
+      if (resumo.tipo === 'LOJA') desenharInicioLoja(corpo, resumo, function () { carregar(true); });
+      else desenharInicioGeral(corpo, resumo, function () { carregar(true); });
+    };
+
+    const guardado = lerResumoGuardado();
+    if (guardado) desenhar(guardado.resumo);
+    else corpo.innerHTML = carregandoHtml('Buscando seus arquivos...');
+
+    let carregando = false;
+    const carregar = async function (manual) {
+      if (carregando) return;
+      carregando = true;
+      info.innerHTML = '<span class="girando mini"></span>Atualizando...';
       try {
-        resumo = await chamar('resumoInicio');
+        const resumo = await chamar('resumoInicio');
         guardarResumo(resumo);
-        try { localStorage.setItem(CHAVE_RESUMO, JSON.stringify({ quando: new Date().toISOString(), resumo: resumo })); } catch (e) { /* ignora */ }
+        guardarResumoNoAparelho(resumo);
+        if (document.body.contains(corpo)) desenhar(resumo);
+        info.innerHTML = ICONES.atualizar + 'Atualizado às ' + horaCurta(new Date().toISOString());
+        if (manual) toast('Atualizado.');
       } catch (erro) {
-        if (silencioso) return;
-        let cache = null;
-        try { cache = JSON.parse(localStorage.getItem(CHAVE_RESUMO) || 'null'); } catch (e) { /* ignora */ }
-        if (erro.offline && cache) {
-          resumo = cache.resumo;
-          corpo.insertAdjacentHTML('beforebegin', '<div class="mensagem aviso">Sem internet: mostrando os números de ' + esc(dataHora(cache.quando)) + '.</div>');
-        } else {
+        const g = lerResumoGuardado();
+        if (erro.offline && g) {
+          info.innerHTML = ICONES.nuvem + 'Sem internet · dados de ' + horaCurta(g.quando);
+        } else if (!ultimo) {
           corpo.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
-          return;
+          info.innerHTML = '';
+        } else {
+          info.innerHTML = ICONES.alerta + 'Não atualizou · toque para tentar';
         }
       }
-      if (!document.body.contains(corpo)) return;
-      if (resumo.tipo === 'LOJA') desenharInicioLoja(corpo, resumo);
-      else desenharInicioGeral(corpo, resumo);
+      carregando = false;
     };
-    await carregar(false);
+    info.onclick = function () { carregar(true); };
+    ativarPuxarParaAtualizar(el, carregar);
+    carregar(false);
     // Atualiza sozinho a cada minuto (rota do motorista e números)
     Estado.timerPagina = setInterval(function () {
-      if (document.visibilityState === 'visible' && navigator.onLine) carregar(true);
+      if (document.visibilityState === 'visible' && navigator.onLine) carregar(false);
     }, 60000);
+  }
+
+  /* ---------- Cards compactos com a lista abrindo logo abaixo ---------- */
+  function cardMiniHtml(c, selecionado) {
+    return '<button type="button" class="card-mini ' + c.cor + (selecionado ? ' selecionado' : '') + (c.numero ? '' : ' zerado') + '" data-card="' + c.id + '" aria-expanded="' + (selecionado ? 'true' : 'false') + '">' +
+      '<span class="card-mini-icone">' + ICONES[c.icone] + '</span>' +
+      '<span class="card-mini-textos"><span class="card-mini-numero">' + c.numero + '</span>' +
+      '<span class="card-mini-titulo">' + esc(c.titulo) + '</span></span>' +
+      '<span class="card-mini-seta">' + ICONES.seta + '</span></button>';
+  }
+
+  /** Grade de cards; o painel com a lista entra logo depois da linha do card aberto. */
+  function gradeCardsHtml(cards, escolhido, painelHtml) {
+    const colunas = window.innerWidth >= 900 ? 4 : 2;
+    const pos = cards.map(function (c) { return c.id; }).indexOf(escolhido);
+    const fimDaLinha = pos < 0 ? -1 : Math.min(cards.length - 1, Math.floor(pos / colunas) * colunas + colunas - 1);
+    let html = '<div class="cards-mini">';
+    cards.forEach(function (c, i) {
+      html += cardMiniHtml(c, c.id === escolhido);
+      if (i === fimDaLinha) {
+        const seta = ((pos % colunas) + 0.5) * 100 / colunas;
+        html += '<div class="painel-card ' + cards[pos].cor + (Estado.animarPainel ? ' animar' : '') + '" style="--seta:' + seta + '%">' + painelHtml + '</div>';
+        Estado.animarPainel = false;
+      }
+    });
+    return html + '</div>';
+  }
+
+  function painelListaHtml(titulo, itens, total, lado, vazio, linkTodos, opcoes) {
+    const mostrar = (itens || []).slice(0, 5);
+    return '<div class="painel-topo"><b>' + esc(titulo) + '</b><span>' + total + '</span></div>' +
+      (opcoes && opcoes.dica ? '<p class="descricao pequena">' + esc(opcoes.dica) + '</p>' : '') +
+      listaArquivosHtml(mostrar, lado, vazio, opcoes) +
+      (total > mostrar.length ? '<a class="ver-todos" href="' + linkTodos + '">Ver todos (' + total + ') ›</a>' :
+        (total ? '<a class="ver-todos discreto" href="' + linkTodos + '">Abrir na lista ›</a>' : ''));
+  }
+
+  function lerCardEscolhido(chave, padrao) {
+    try {
+      const v = localStorage.getItem(chave);
+      return v === null ? padrao : (v === 'nenhum' ? '' : v);
+    } catch (e) { return padrao; }
+  }
+
+  function ligarCards(corpo, chave, aoMudar) {
+    corpo.querySelectorAll('[data-card]').forEach(function (b) {
+      b.onclick = function () {
+        const fechar = b.classList.contains('selecionado');
+        try { localStorage.setItem(chave, fechar ? 'nenhum' : b.dataset.card); } catch (e) { /* ignora */ }
+        Estado.animarPainel = !fechar;
+        aoMudar(fechar ? '' : b.dataset.card);
+        if (!fechar) {
+          const painel = corpo.querySelector('.painel-card');
+          if (painel) {
+            const r = painel.getBoundingClientRect();
+            if (r.bottom > window.innerHeight - 80) painel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+      };
+    });
+  }
+
+  /* ---------- Rota "inteligente": completa quando importa, uma linha quando não ---------- */
+  function rotaImportaParaLoja(rota, lojaId) {
+    if (!rota || !lojaId || rota.estado === 'CONCLUIDA') return false;
+    let importa = false;
+    rota.paradas.forEach(function (p, i) {
+      if (p.loja_id !== lojaId) return;
+      if (!p.passou_em || (rota.estado === 'NA_PARADA' && rota.indice === i)) importa = true;
+    });
+    return importa;
+  }
+
+  function rotaCompactaHtml(rota, opcoes, extra) {
+    return '<details class="rota-compacta"><summary>' + ICONES.rota + '<span>Rota de hoje: <b>' + esc(textoEstadoRota(rota)) + '</b>' +
+      (extra ? ' · ' + extra : '') + '</span>' + ICONES.seta + '</summary>' + rotaHtml(rota, opcoes) + '</details>';
+  }
+
+  function ligarRotaCompacta(corpo, aoMudar) {
+    corpo.querySelectorAll('details.rota-compacta').forEach(function (d) {
+      d.addEventListener('toggle', function () { if (d.open) ativarRota(d, aoMudar); });
+    });
   }
 
   /** Aviso para o gerente quando a loja dele está na rota de hoje. */
@@ -608,7 +774,6 @@
     const indices = [];
     rota.paradas.forEach(function (p, i) { if (p.loja_id === lojaId) indices.push(i); });
     if (!indices.length) return '';
-    // A parada que importa agora: a primeira por onde ele ainda não passou (ou a última, se já passou por todas)
     const idx = indices.filter(function (i) { return !rota.paradas[i].passou_em; })[0];
     const i = idx === undefined ? indices[indices.length - 1] : idx;
     const p = rota.paradas[i];
@@ -618,10 +783,10 @@
       texto = '<b>O motorista está na sua loja agora!</b>';
       classe += ' agora';
     } else if (rota.estado === 'CONCLUIDA' && ehChegada) {
-      texto = 'O motorista voltou para a sua loja às ' + horaCurta(p.passou_em) + '. Rota concluída.';
+      texto = 'O motorista voltou para a sua loja às ' + horaCurta(p.passou_em) + '.';
       classe += ' feito';
     } else if (p.passou_em) {
-      texto = 'O motorista já passou na sua loja hoje, às ' + horaCurta(p.passou_em) + '.';
+      texto = 'O motorista já passou na sua loja às ' + horaCurta(p.passou_em) + '.';
       classe += ' feito';
     } else if (ehChegada) {
       texto = rota.estado === 'VOLTANDO' ? '<b>O motorista está voltando para a sua loja!</b>' : 'O motorista volta para a sua loja no fim da rota.';
@@ -634,74 +799,124 @@
     return '<div class="' + classe + '">' + ICONES.caminhao + '<div>' + texto + '</div></div>';
   }
 
-  function cardMiniHtml(id, titulo, numero, sub, icone, cor, selecionado) {
-    return '<button type="button" class="card-mini ' + cor + (selecionado ? ' selecionado' : '') + '" data-card="' + id + '">' +
-      '<span class="card-mini-topo"><span class="card-mini-titulo">' + esc(titulo) + '</span>' + ICONES[icone] + '</span>' +
-      '<span class="card-mini-numero">' + numero + '</span>' +
-      '<span class="card-mini-sub">' + sub + '</span></button>';
+  /** Texto curto para a rota resumida do gerente (ex.: "passou aqui às 11:27"). */
+  function resumoRotaParaLoja(rota, lojaId) {
+    const passou = rota.paradas.filter(function (p) { return p.loja_id === lojaId && p.passou_em; });
+    if (passou.length) return 'passou aqui às ' + horaCurta(passou[passou.length - 1].passou_em);
+    if (!rota.paradas.some(function (p) { return p.loja_id === lojaId; })) return 'sua loja não está na rota';
+    return '';
   }
 
-  function desenharInicioLoja(corpo, r) {
+  /* ---------- "Recebi": marca como entregue direto da lista ---------- */
+  function receberArquivo(t, depois) {
+    const vol = t.total_volumes > 1 ? ' com ' + t.total_volumes + ' volumes' : '';
+    abrirJanela('Confirmar recebimento',
+      '<p>O arquivo <b>' + esc(t.arquivo) + '</b>' + esc(vol) + ', de <b>' + esc(nomeLojaCurto(t.origem_id)) + '</b>, chegou na sua loja?</p>' +
+      (t.total_volumes > 1 ? '<p class="descricao pequena">Se chegou só parte dos volumes, use "Registrar" para marcar quais chegaram.</p>' : ''),
+      {
+        textoSalvar: 'Sim, recebi',
+        aoSalvar: async function () {
+          const dados = {
+            arquivo: t.arquivo, status: 'ENTREGUE', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
+            id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
+            origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
+          };
+          const enviar = async function (d) {
+            try {
+              const r = await chamar('registrar', d);
+              if (r.precisaConfirmar) {
+                confirmarAvisos(r.avisos, function () { d.confirmar = true; return enviar(d); });
+                return;
+              }
+              toast(r.mensagem || 'Recebimento registrado.');
+              depois();
+            } catch (erro) {
+              if (erro.offline) {
+                Fila.adicionar(d);
+                toast('Sem internet: recebimento guardado no aparelho. Será enviado quando a conexão voltar.');
+              } else if (!erro.sessaoExpirada) {
+                toast(erro.message, true);
+              }
+            }
+          };
+          setTimeout(function () { enviar(dados); }, 0);
+        }
+      });
+  }
+
+  /* ---------- Tela inicial do gerente/estoquista ---------- */
+  function desenharInicioLoja(corpo, r, atualizar) {
     const rec = r.recebendo;
     const env = r.enviando;
-    let escolhido = 'para-voce';
-    try { escolhido = localStorage.getItem('rastreia_card_inicio') || 'para-voce'; } catch (e) { /* ignora */ }
-    const partes = [];
-    if (rec.com_motorista) partes.push(rec.com_motorista + ' c/ motorista');
-    if (rec.no_cd) partes.push(rec.no_cd + ' no CD');
-    if (rec.na_origem) partes.push(rec.na_origem + ' na origem');
-    const listas = {
-      'para-voce': { titulo: 'Arquivos para você', itens: rec.lista, lado: 'origem', vazio: 'Nenhum arquivo a caminho da sua loja.' },
-      vendedores: { titulo: 'Encomendas de vendedores', itens: rec.vendedores, lado: 'origem', vazio: 'Nenhuma encomenda de vendedor chegando.', dica: 'Avise o vendedor quando a mercadoria chegar.' },
-      coleta: { titulo: 'Aguardando coleta na sua loja', itens: env.lista_coleta, lado: 'destino', vazio: 'Nenhum arquivo esperando o motorista.' },
-      enviando: { titulo: 'Sua loja enviando', itens: env.lista_caminho, lado: 'destino', vazio: 'Nenhum arquivo da sua loja a caminho do destino.', dica: 'Arquivos que já saíram da sua loja e ainda não chegaram ao destino.' }
-    };
-    if (!listas[escolhido]) escolhido = 'para-voce';
+    const loja = r.loja_id;
+    const totalVend = rec.vendedores_total !== undefined ? rec.vendedores_total : rec.vendedores.length;
+    const cards = [
+      { id: 'para-voce', titulo: 'Arquivos para você', numero: rec.total, icone: 'caixa', cor: 'c-indigo',
+        lista: rec.lista, lado: 'origem', vazio: 'Nenhum arquivo a caminho da sua loja.', link: '#/transferencias?destino_id=' + loja + '&situacao=ABERTOS',
+        dica: [rec.com_motorista ? rec.com_motorista + ' com o motorista' : '', rec.no_cd ? rec.no_cd + ' no CD' : '', rec.na_origem ? rec.na_origem + ' ainda na origem' : ''].filter(Boolean).join(' · '),
+        recebi: true },
+      { id: 'vendedores', titulo: 'Encomendas de vendedores', numero: totalVend, icone: 'pessoa', cor: 'c-rosa',
+        lista: rec.vendedores, lado: 'origem', vazio: 'Nenhuma encomenda de vendedor chegando.', link: '#/transferencias?destino_id=' + loja + '&situacao=COM_VENDEDOR',
+        dica: 'Avise o vendedor quando a mercadoria chegar.', recebi: true },
+      { id: 'coleta', titulo: 'Aguardando coleta', numero: env.aguardando_coleta, icone: 'caixa', cor: 'c-laranja',
+        lista: env.lista_coleta, lado: 'destino', vazio: 'Nenhum arquivo esperando o motorista.', link: '#/transferencias?origem_id=' + loja + '&situacao=SEPARADA',
+        dica: 'Separados na sua loja, esperando o motorista.' },
+      { id: 'enviando', titulo: 'Sua loja enviando', numero: env.a_caminho, icone: 'caminhao', cor: 'c-azul',
+        lista: env.lista_caminho, lado: 'destino', vazio: 'Nenhum arquivo da sua loja a caminho.', link: '#/transferencias?origem_id=' + loja + '&situacao=EM_TRANSITO',
+        dica: 'Já saíram da sua loja e ainda não chegaram. ' + env.entregues_7_dias + ' entregue(s) nos últimos 7 dias.' }
+    ];
+    let escolhido = lerCardEscolhido('rastreia_card_inicio', rec.total ? 'para-voce' : '');
 
     const desenhar = function () {
-      const l = listas[escolhido];
+      const c = cards.filter(function (x) { return x.id === escolhido; })[0];
+      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, c.lado, c.vazio, c.link, { dica: c.dica, recebi: c.recebi }) : '';
+      const importa = rotaImportaParaLoja(r.rota, loja);
       corpo.innerHTML =
-        avisoRotaGerente(r.rota, r.loja_id, env.aguardando_coleta) +
-        '<div class="cards-mini">' +
-          cardMiniHtml('para-voce', 'Arquivos para você', rec.total, partes.length ? partes.join(' · ') : rec.recebidos_7_dias + ' recebido(s) em 7 dias', 'caixa', 'c-azul', escolhido === 'para-voce') +
-          cardMiniHtml('vendedores', 'Encomendas de vendedores', rec.vendedores_total !== undefined ? rec.vendedores_total : rec.vendedores.length, 'chegando para vendedores', 'pessoa', 'c-roxo', escolhido === 'vendedores') +
-          cardMiniHtml('coleta', 'Aguard. coleta na sua loja', env.aguardando_coleta, 'esperando o motorista', 'armazem', 'c-laranja', escolhido === 'coleta') +
-          cardMiniHtml('enviando', 'Sua loja enviando', env.a_caminho, env.entregues_7_dias + ' entregue(s) em 7 dias', 'caminhao', 'c-verde', escolhido === 'enviando') +
-        '</div>' +
-        (r.rota ? rotaHtml(r.rota, { destaque: r.loja_id }) : '') +
+        (importa ? rotaHtml(r.rota, { destaque: loja, aviso: avisoRotaGerente(r.rota, loja, env.aguardando_coleta) }) : '') +
+        gradeCardsHtml(cards, escolhido, painel) +
         (r.atencao.length ? blocoHtml('Precisam de atenção (' + r.atencao.length + ')',
           '<p class="descricao pequena">Atrasados (mais de ' + r.dias_alerta_pendente + ' dias parados, ou ' + r.dias_alerta_cd + ' no CD), com volume faltando ou com ocorrência.</p>' +
           listaArquivosHtml(r.atencao, 'ambos'), '<span class="selo erro">' + ICONES.alerta + 'Atenção</span>') : '') +
-        '<section class="lista-card"><h3>' + esc(l.titulo) + ' (' + (l.itens || []).length + ')</h3>' +
-          (l.dica ? '<p class="descricao pequena">' + esc(l.dica) + '</p>' : '') +
-          listaArquivosHtml(l.itens, l.lado, l.vazio) + '</section>';
+        (!importa && r.rota ? rotaCompactaHtml(r.rota, { destaque: loja }, resumoRotaParaLoja(r.rota, loja)) : '');
       ativarBlocos(corpo);
       ativarRota(corpo);
-      corpo.querySelectorAll('[data-card]').forEach(function (b) {
+      ligarRotaCompacta(corpo);
+      ligarCards(corpo, 'rastreia_card_inicio', function (novo) { escolhido = novo; desenhar(); });
+      corpo.querySelectorAll('[data-recebi]').forEach(function (b) {
         b.onclick = function () {
-          escolhido = b.dataset.card;
-          try { localStorage.setItem('rastreia_card_inicio', escolhido); } catch (e) { /* ignora */ }
-          desenhar();
-          const lista = corpo.querySelector('.lista-card');
-          if (lista && window.innerWidth < 800) lista.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const t = (c ? c.lista : []).filter(function (x) { return x.arquivo === b.dataset.recebi; })[0];
+          if (t) receberArquivo(t, atualizar);
         };
       });
     };
     desenhar();
+    if (corpo._aoRedimensionar) window.removeEventListener('resize', corpo._aoRedimensionar);
+    let colunas = window.innerWidth >= 900 ? 4 : 2;
+    corpo._aoRedimensionar = function () {
+      const agora = window.innerWidth >= 900 ? 4 : 2;
+      if (agora !== colunas && document.body.contains(corpo)) { colunas = agora; desenhar(); }
+    };
+    window.addEventListener('resize', corpo._aoRedimensionar);
   }
 
+  /* ---------- Tela inicial do administrador, CEO e motorista ---------- */
   function desenharInicioGeral(corpo, r) {
     const u = Estado.usuario;
     const podeMontar = u.perfil === 'ADM' || u.perfil === 'CEO';
-    let escolhido = 'coleta';
-    try { escolhido = localStorage.getItem('rastreia_card_geral') || 'coleta'; } catch (e) { /* ignora */ }
-    const listas = {
-      coleta: { titulo: 'Aguardando coleta', itens: r.lista_coleta || [], vazio: 'Nenhum arquivo esperando o motorista nas lojas.' },
-      vendedores: { titulo: 'Encomendas de vendedores', itens: r.lista_vendedores || [], vazio: 'Nenhuma encomenda de vendedor em aberto.', dica: 'Arquivos pedidos por vendedores que ainda não foram entregues.' },
-      cd: { titulo: 'No CD', itens: r.lista_cd || [], vazio: 'Nada parado no CD.' },
-      motorista: { titulo: 'Com motorista', itens: r.lista_motorista || [], vazio: 'Nenhum arquivo em trânsito.' }
-    };
-    if (!listas[escolhido]) escolhido = 'coleta';
+    const podeMarcar = ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0;
+    const cards = [
+      { id: 'coleta', titulo: 'Aguardando coleta', numero: r.aguardando_coleta, icone: 'caixa', cor: 'c-laranja',
+        lista: r.lista_coleta || [], vazio: 'Nenhum arquivo esperando o motorista nas lojas.', link: '#/transferencias?situacao=SEPARADA' },
+      { id: 'vendedores', titulo: 'Encomendas de vendedores', numero: r.vendedores_total || 0, icone: 'pessoa', cor: 'c-rosa',
+        lista: r.lista_vendedores || [], vazio: 'Nenhuma encomenda de vendedor em aberto.', link: '#/transferencias?situacao=COM_VENDEDOR',
+        dica: 'Pedidas por vendedores e ainda não entregues.' },
+      { id: 'cd', titulo: 'No CD', numero: r.no_cd, icone: 'armazem', cor: 'c-marrom',
+        lista: r.lista_cd || [], vazio: 'Nada parado no CD.', link: '#/transferencias?situacao=NO_CD' },
+      { id: 'motorista', titulo: 'Com motorista', numero: r.com_motorista, icone: 'caminhao', cor: 'c-azul',
+        lista: r.lista_motorista || [], vazio: 'Nenhum arquivo em trânsito.', link: '#/transferencias?situacao=COM_MOTORISTA',
+        dica: r.entregues_hoje + ' entregue(s) hoje.' }
+    ];
+    let escolhido = lerCardEscolhido('rastreia_card_geral', r.aguardando_coleta ? 'coleta' : '');
     const naRota = {};
     if (r.rota) r.rota.paradas.forEach(function (p) { naRota[p.loja_id] = true; });
     const lojas = (r.lojas || []).filter(function (l) { return lojaPorId(l.loja_id); });
@@ -712,7 +927,7 @@
       const total = lojas.reduce(function (a, l) { return { retirar: a.retirar + l.retirar, entregar: a.entregar + l.entregar }; }, { retirar: 0, entregar: 0 });
       return '<section class="cartao tabela-lojas-caixa">' +
         '<div class="tabela-lojas-topo"><h3>Movimento por loja</h3>' +
-          '<p class="descricao pequena"><b>Retirar</b>: arquivos separados na loja esperando o motorista. <b>Entregar</b>: arquivos que ainda precisam chegar nessa loja.</p></div>' +
+          '<p class="descricao pequena"><b>Retirar</b>: separados na loja, esperando o motorista. <b>Entregar</b>: ainda precisam chegar na loja.</p></div>' +
         '<table class="tabela-lojas"><thead><tr>' + (podeMontar ? '<th class="col-marca"></th>' : '') +
           '<th>Loja</th><th class="num">Retirar</th><th class="num">Entregar</th></tr></thead><tbody>' +
         lojas.map(function (l) {
@@ -735,36 +950,25 @@
     };
 
     const desenhar = function () {
-      const l = listas[escolhido];
+      const c = cards.filter(function (x) { return x.id === escolhido; })[0];
+      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica }) : '';
+      let rotaTopo = '';
+      if (r.rota && r.rota.estado !== 'CONCLUIDA') rotaTopo = rotaHtml(r.rota, { podeMarcar: podeMarcar });
+      else if (r.rota) rotaTopo = rotaCompactaHtml(r.rota, { podeMarcar: podeMarcar });
+      else if (podeMontar) rotaTopo = '<a class="rota-vazia" href="#/rota">' + ICONES.rota + '<span>Nenhuma rota para hoje. <b>Montar a rota do motorista ›</b></span></a>';
       corpo.innerHTML =
-        (r.rota ? rotaHtml(r.rota, { podeMarcar: ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0 }) :
-          (podeMontar ? '<a class="rota-vazia" href="#/rota">' + ICONES.rota + 'Nenhuma rota para hoje. Toque para montar a rota do motorista.</a>' : '')) +
-        '<div class="cards-mini">' +
-          cardMiniHtml('coleta', 'Aguardando coleta', r.aguardando_coleta, 'separados nas lojas', 'caixa', 'c-laranja', escolhido === 'coleta') +
-          cardMiniHtml('vendedores', 'Encomendas de vendedores', r.vendedores_total || 0, 'ainda não entregues', 'pessoa', 'c-roxo', escolhido === 'vendedores') +
-          cardMiniHtml('cd', 'No CD', r.no_cd, 'esperando seguir viagem', 'armazem', 'c-cd', escolhido === 'cd') +
-          cardMiniHtml('motorista', 'Com motorista', r.com_motorista, r.entregues_hoje + ' entregue(s) hoje', 'caminhao', 'c-azul', escolhido === 'motorista') +
-        '</div>' +
-        tabelaHtml() +
+        rotaTopo +
+        gradeCardsHtml(cards, escolhido, painel) +
         (r.atencao.length ? blocoHtml('Precisam de atenção (' + r.atencao.length + ')',
           '<p class="descricao pequena">Atrasados (mais de ' + r.dias_alerta_pendente + ' dias parados, ou ' + r.dias_alerta_cd + ' no CD), com volume faltando ou com ocorrência.</p>' +
           listaArquivosHtml(r.atencao, 'ambos'), '<span class="selo erro">' + ICONES.alerta + 'Atenção</span>') : '') +
-        '<section class="lista-card"><h3>' + esc(l.titulo) + ' (' + l.itens.length + ')</h3>' +
-          (l.dica ? '<p class="descricao pequena">' + esc(l.dica) + '</p>' : '') +
-          listaArquivosHtml(l.itens, 'ambos', l.vazio) + '</section>';
+        tabelaHtml();
       ativarBlocos(corpo);
       ativarRota(corpo, function (nova) { r.rota = nova; desenhar(); });
-      corpo.querySelectorAll('[data-card]').forEach(function (b) {
-        b.onclick = function () {
-          escolhido = b.dataset.card;
-          try { localStorage.setItem('rastreia_card_geral', escolhido); } catch (e) { /* ignora */ }
-          desenhar();
-          const lista = corpo.querySelector('.lista-card');
-          if (lista && window.innerWidth < 800) lista.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        };
-      });
-      corpo.querySelectorAll('[data-loja-rota]').forEach(function (c) {
-        c.onchange = function () { if (c.checked) marcadas[c.dataset.lojaRota] = true; else delete marcadas[c.dataset.lojaRota]; };
+      ligarRotaCompacta(corpo, function (nova) { r.rota = nova; desenhar(); });
+      ligarCards(corpo, 'rastreia_card_geral', function (novo) { escolhido = novo; desenhar(); });
+      corpo.querySelectorAll('[data-loja-rota]').forEach(function (cx) {
+        cx.onchange = function () { if (cx.checked) marcadas[cx.dataset.lojaRota] = true; else delete marcadas[cx.dataset.lojaRota]; };
       });
       const montar = corpo.querySelector('[data-montar-rota]');
       if (montar) montar.onclick = function () {
@@ -774,6 +978,13 @@
       };
     };
     desenhar();
+    if (corpo._aoRedimensionar) window.removeEventListener('resize', corpo._aoRedimensionar);
+    let colunas = window.innerWidth >= 900 ? 4 : 2;
+    corpo._aoRedimensionar = function () {
+      const agora = window.innerWidth >= 900 ? 4 : 2;
+      if (agora !== colunas && document.body.contains(corpo)) { colunas = agora; desenhar(); }
+    };
+    window.addEventListener('resize', corpo._aoRedimensionar);
   }
 
   /* =========================================================
@@ -860,6 +1071,7 @@
       botoes = '<div class="rota-botoes">' + botoes + '<span class="descricao pequena">Use quando não houver arquivo para registrar na parada.</span></div>';
     }
     return '<section class="rota-card" data-rota-data="' + esc(rota.data) + '" data-pos="' + pos + '">' +
+      (opcoes.aviso || '') +
       '<div class="rota-topo"><span class="rota-titulo">' + ICONES.rota + esc(titulo) + '</span>' +
         '<span class="rota-estado e-' + rota.estado.toLowerCase() + '">' + esc(textoEstadoRota(rota)) + '</span></div>' +
       '<div class="rota-rolagem"><div class="rota-trilha" style="min-width:' + Math.max(200, n * 46) + 'px">' +
@@ -1806,10 +2018,16 @@
 
   function paginaTransferencias(el) {
     const parametros = new URLSearchParams((location.hash.split('?')[1] || ''));
-    if (parametros.get('situacao')) { FiltrosLista.situacao = parametros.get('situacao'); FiltrosLista.periodo = 'TODOS'; }
+    if (parametros.get('situacao') || parametros.get('origem_id') || parametros.get('destino_id')) {
+      Object.assign(FiltrosLista, {
+        periodo: 'TODOS', de: '', ate: '', arquivo: '', vendedor: '',
+        situacao: parametros.get('situacao') || '', origem_id: parametros.get('origem_id') || '', destino_id: parametros.get('destino_id') || ''
+      });
+    }
     const f = FiltrosLista;
     const situacoes = [['', 'Todas'], ['ABERTOS', 'Em aberto (não entregues)'], ['ATENCAO', 'Precisam de atenção'], ['SEPARADA', 'Aguardando coleta'],
-      ['COM_MOTORISTA', 'Com motorista'], ['NO_CD', 'No CD'], ['ENTREGUE', 'Entregues']];
+      ['EM_TRANSITO', 'A caminho (com motorista ou no CD)'], ['COM_MOTORISTA', 'Com motorista'], ['NO_CD', 'No CD'], ['ENTREGUE', 'Entregues'],
+      ['COM_VENDEDOR', 'Encomendas de vendedores (em aberto)']];
     const lojasOpcoes = function (sel) {
       return '<option value="">Todas</option>' + lojasOrdenadas(function (l) { return l.tipo === 'LOJA'; }).map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(nomeLojaCurto(l.id)) + '</option>';
@@ -1884,7 +2102,7 @@
       Xlsx.baixar('transferencias-' + diaIso(new Date()) + '.xlsx', [abaTransferencias(ultimo.r.itens)]);
     };
     saida.addEventListener('click', function (e) {
-      const a = e.target.closest('a.item-arquivo');
+      const a = e.target.closest('a[href*="arq="]');
       if (!a) return;
       e.preventDefault();
       abrirDetalhe(decodeURIComponent(a.getAttribute('href').split('arq=')[1] || ''));
