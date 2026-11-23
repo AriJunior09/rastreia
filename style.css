@@ -465,3 +465,70 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .carregando.pequeno { padding: 10px; justify-content: flex-start; }
 .campo label.opcao-status { display: flex; font-size: 15px; font-weight: 400; margin-bottom: 0; }
 .campo label.chip-volume { display: inline-block; margin: 0; font-size: 14px; }
+
+/* ---------- Logo e sino ---------- */
+.logo-topo { height: 28px; width: auto; max-width: 90px; object-fit: contain; vertical-align: middle; margin-right: 8px; background: #fff; border-radius: 6px; padding: 2px; }
+.logo-login { max-height: 72px; max-width: 200px; object-fit: contain; }
+.topo { position: sticky; }
+.sino { position: relative; }
+.sino .contador {
+  position: absolute; top: 0; right: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #ef4444; color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--cor-primaria-escura);
+}
+.painel-sino {
+  position: absolute; top: calc(100% + 6px); right: 10px; width: min(420px, calc(100vw - 20px)); max-height: 75vh; overflow-y: auto;
+  background: var(--fundo); color: var(--texto); border-radius: 14px; padding: 14px; box-shadow: 0 16px 40px rgba(0, 0, 0, .3); z-index: 45;
+}
+.painel-titulo { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 16px; }
+.painel-titulo span { background: var(--cor-erro); color: #fff; border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: 13px; }
+.painel-sino .botao { margin-top: 10px; }
+
+/* ---------- Câmera ---------- */
+.botao-camera { position: relative; overflow: hidden; }
+.botao-camera input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.botao-camera svg { width: 22px; height: 22px; }
+.ou { display: flex; align-items: center; gap: 10px; color: var(--texto-suave); font-size: 13px; margin: 14px 0 6px; }
+.ou::before, .ou::after { content: ''; flex: 1; border-top: 1px solid var(--borda); }
+.resultado-leitura .mensagem { margin: 12px 0 0; }
+.resultado-leitura details { margin-top: 6px; font-size: 13px; }
+.texto-lido { white-space: pre-wrap; background: #fff; border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 6px 0 0; color: var(--texto); }
+.campo.conferir input, .campo.conferir select { border-color: #f59e0b; background: #fffbeb; box-shadow: 0 0 0 3px #fef3c7; }
+.campo.faltou input, .campo.faltou select { border-color: var(--cor-erro); background: #fef2f2; box-shadow: 0 0 0 3px var(--cor-erro-clara); }
+.campo.lido input, .campo.lido select { border-color: var(--cor-ok); }
+.campo.conferir > label::after { content: ' · confira'; color: #b45309; font-weight: 600; }
+.campo.faltou > label::after { content: ' · não consegui ler'; color: var(--cor-erro); font-weight: 600; }
+.campo.lido > label::after { content: ' · lido da foto'; color: var(--cor-ok); font-weight: 600; }
+
+/* ---------- Lista e filtros ---------- */
+.filtros > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; }
+.filtros > summary::-webkit-details-marker { display: none; }
+.filtros > summary::before { content: '▸'; color: var(--texto-suave); transition: transform .15s; }
+.filtros[open] > summary::before { transform: rotate(90deg); }
+.filtros[open] > summary { margin-bottom: 12px; }
+.resumo-filtros { color: var(--texto-suave); font-size: 13px; }
+.grade-filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 14px; }
+.grade-filtros .bloco-periodo { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 14px; }
+.grade-filtros .bloco-periodo .linha-campos { grid-column: span 2; }
+@media (max-width: 520px) { .grade-filtros .bloco-periodo .linha-campos { grid-column: auto; } }
+.resumo-lista { margin: 4px 0 12px; font-size: 14px; }
+.texto-erro { color: var(--cor-erro); font-weight: 600; }
+.volumes-situacao { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 8px; }
+.historico { margin-top: 12px; font-size: 14px; }
+.janela .cartao-arquivo { margin-bottom: 0; }
+
+/* ---------- Relatórios ---------- */
+.tabela-rolagem { overflow-x: auto; }
+.indicador.realce-erro .valor { color: var(--cor-erro); }
+
+/* ---------- Aparência / Leitura ---------- */
+.previa-logo { min-height: 80px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--borda); border-radius: 12px; margin-bottom: 10px; padding: 10px; background: #fff; }
+.previa-logo img { max-height: 90px; max-width: 220px; }
+.cores { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.amostra-cor { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--borda); cursor: pointer; }
+.cores input[type=color] { width: 44px; height: 38px; padding: 2px; border: 1px solid var(--borda); border-radius: 8px; background: #fff; }
+.explica ol { margin: 6px 0; padding-left: 20px; }
+.teste-leitura { display: grid; grid-template-columns: 160px 1fr; gap: 14px; align-items: start; margin: 14px 0; }
+.teste-leitura img { width: 100%; border-radius: 10px; border: 1px solid var(--borda); }
+@media (max-width: 520px) { .teste-leitura { grid-template-columns: 1fr; } }
+.campo label.botao { display: inline-flex; font-size: 15px; margin: 0; }

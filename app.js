@@ -35,6 +35,9 @@
     pessoa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>',
     nuvem: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/><path d="M12 12v5M9.5 14.5L12 12l2.5 2.5"/></svg>',
     seta: '<svg class="seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    sino: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
+    grafico: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-8"/></svg>',
+    baixar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
     mais: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
   };
 
@@ -79,6 +82,28 @@
 
   function carregandoHtml(texto) {
     return '<div class="carregando"><div class="girando"></div>' + esc(texto || 'Carregando...') + '</div>';
+  }
+
+  /** Aplica a cor e o logo da empresa (personalização). */
+  function aplicarTema(config) {
+    config = config || {};
+    const cor = /^#[0-9a-fA-F]{6}$/.test(config.cor_principal || '') ? config.cor_principal : '#1d4ed8';
+    const mistura = function (hex, alvo, peso) {
+      const n = parseInt(hex.slice(1), 16);
+      const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (v) { return Math.round(v + (alvo - v) * peso); });
+      return '#' + c.map(function (v) { return ('0' + v.toString(16)).slice(-2); }).join('');
+    };
+    const raiz = document.documentElement.style;
+    raiz.setProperty('--cor-primaria', cor);
+    raiz.setProperty('--cor-primaria-escura', mistura(cor, 0, 0.35));
+    raiz.setProperty('--cor-primaria-clara', mistura(cor, 255, 0.85));
+    const meta = document.querySelector('meta[name=theme-color]');
+    if (meta) meta.setAttribute('content', mistura(cor, 0, 0.35));
+  }
+
+  function logoHtml(classe) {
+    const logo = Estado.base && Estado.base.config ? Estado.base.config.empresa_logo : ((lerCacheBase() || {}).config || {}).empresa_logo;
+    return logo && /^data:image\//.test(logo) ? '<img class="' + classe + '" src="' + esc(logo) + '" alt="">' : '';
   }
 
   function salvarCacheBase(base) {
@@ -143,6 +168,7 @@
     Estado.base = base;
     Estado.usuario = base.usuario;
     salvarCacheBase(base);
+    aplicarTema(base.config);
     return base;
   }
 
@@ -160,7 +186,7 @@
         corpoHtml +
         '<div class="rodape">' +
           (opcoes.extraRodape || '') +
-          '<button type="button" class="botao secundario" data-fechar>Cancelar</button>' +
+          '<button type="button" class="botao secundario" data-fechar>' + esc(opcoes.textoCancelar || 'Cancelar') + '</button>' +
           '<button type="submit" class="botao">' + esc(opcoes.textoSalvar || 'Salvar') + '</button>' +
         '</div>' +
       '</form>';
@@ -206,9 +232,10 @@
 
   function telaLogin(mensagem) {
     const empresa = (lerCacheBase() || {}).config ? lerCacheBase().config.empresa_nome : '';
+    aplicarTema((lerCacheBase() || {}).config);
     $app.innerHTML =
       '<div class="tela-login"><form class="caixa-login" novalidate>' +
-        '<div class="marca">' + ICONES.caixa +
+        '<div class="marca">' + (logoHtml('logo-login') || ICONES.caixa) +
           '<h1>Rastreia</h1>' +
           '<p class="sub">' + esc(empresa || 'Controle de transferências') + '</p>' +
         '</div>' +
@@ -300,7 +327,8 @@
     const itens = [
       { rota: '#/inicio', texto: 'Início', icone: 'inicio' },
       { rota: '#/registrar', texto: 'Registrar', icone: 'registrar' },
-      { rota: '#/transferencias', texto: 'Transferências', icone: 'lista', breve: 'Fase 3' }
+      { rota: '#/transferencias', texto: 'Transferências', icone: 'lista' },
+      { rota: '#/relatorios', texto: 'Relatórios', icone: 'grafico' }
     ];
     if (ehAdm()) itens.push({ separador: true }, { rota: '#/config/lojas', texto: 'Configurações', icone: 'config', prefixo: '#/config' });
     itens.push({ separador: true }, { rota: '#/senha', texto: 'Trocar senha', icone: 'chave' });
@@ -321,9 +349,11 @@
     $app.innerHTML =
       '<header class="topo">' +
         '<button class="botao-icone botao-menu" aria-label="Abrir menu">' + ICONES.menu + '</button>' +
-        '<div class="titulo">Rastreia<small>' + esc(empresa) + '</small></div>' +
+        '<div class="titulo">' + logoHtml('logo-topo') + 'Rastreia<small>' + esc(empresa) + '</small></div>' +
         '<div class="usuario"><b>' + esc(u.nome) + '</b><br>' + esc(detalhe) + '</div>' +
+        '<button class="botao-icone sino" data-sino title="Notificações" aria-label="Notificações">' + ICONES.sino + '<span class="contador oculto"></span></button>' +
         '<button class="botao-icone" data-sair title="Sair" aria-label="Sair">' + ICONES.sair + '</button>' +
+        '<div class="painel-sino oculto"></div>' +
       '</header>' +
       '<div id="faixa-fila"></div>' +
       '<div class="layout">' +
@@ -343,7 +373,54 @@
       if (confirm(n ? 'Há ' + n + ' registro(s) guardado(s) neste aparelho que ainda não foram enviados. Eles continuam guardados e serão enviados quando você entrar de novo. Deseja sair?' : 'Deseja sair do Rastreia?')) sair();
     };
     atualizarFaixaFila();
+    const sino = $app.querySelector('[data-sino]');
+    const painel = $app.querySelector('.painel-sino');
+    sino.onclick = function (e) {
+      e.stopPropagation();
+      const abrir = painel.classList.contains('oculto');
+      painel.classList.toggle('oculto', !abrir);
+      if (abrir) desenharPainelSino();
+    };
+    painel.onclick = function (e) { e.stopPropagation(); if (e.target.closest('a')) painel.classList.add('oculto'); };
+    document.onclick = function () { painel.classList.add('oculto'); };
+    atualizarSino(false);
     return $app.querySelector('.conteudo');
+  }
+
+  /* =========================================================
+   *  SINO DE NOTIFICAÇÕES
+   * ========================================================= */
+  function guardarResumo(dados) {
+    Estado.resumo = { quando: Date.now(), dados: dados };
+    desenharContadorSino();
+  }
+
+  async function atualizarSino(forcar) {
+    if (!forcar && Estado.resumo && Date.now() - Estado.resumo.quando < 120000) { desenharContadorSino(); return; }
+    if (!navigator.onLine) return;
+    try { guardarResumo(await Api.chamar('resumoInicio')); } catch (e) { /* o sino fica como estava */ }
+  }
+
+  function desenharContadorSino() {
+    const cont = document.querySelector('[data-sino] .contador');
+    if (!cont || !Estado.resumo) return;
+    const n = (Estado.resumo.dados.atencao || []).length;
+    cont.textContent = n > 99 ? '99+' : String(n);
+    cont.classList.toggle('oculto', n === 0);
+    const painel = document.querySelector('.painel-sino');
+    if (painel && !painel.classList.contains('oculto')) desenharPainelSino();
+  }
+
+  function desenharPainelSino() {
+    const painel = document.querySelector('.painel-sino');
+    if (!painel) return;
+    if (!Estado.resumo) { painel.innerHTML = carregandoHtml('Carregando...'); atualizarSino(true); return; }
+    const r = Estado.resumo.dados;
+    const itens = r.atencao || [];
+    painel.innerHTML = '<div class="painel-titulo"><b>Precisam de atenção</b><span>' + itens.length + '</span></div>' +
+      '<p class="descricao pequena">Parados há mais de ' + esc(r.dias_alerta_pendente) + ' dias (' + esc(r.dias_alerta_cd) + ' no CD), com volume faltando ou com ocorrência.</p>' +
+      (itens.length ? listaArquivosHtml(itens.slice(0, 15), 'ambos') : '<div class="vazio pequeno">Tudo em dia. Nenhum arquivo precisa de atenção.</div>') +
+      (itens.length ? '<a class="botao secundario largo" href="#/transferencias?situacao=ATENCAO">Ver todos na lista</a>' : '');
   }
 
   /* =========================================================
@@ -353,6 +430,10 @@
     '#/inicio': paginaInicio,
     '#/registrar': paginaRegistrar,
     '#/pendentes': paginaPendentes,
+    '#/transferencias': paginaTransferencias,
+    '#/relatorios': paginaRelatorios,
+    '#/config/aparencia': paginaAparencia,
+    '#/config/leitura': paginaLeitura,
     '#/senha': paginaSenha,
     '#/config/parametros': paginaParametros,
     '#/config/lojas': paginaLojas,
@@ -490,6 +571,7 @@
     let resumo;
     try {
       resumo = await chamar('resumoInicio');
+      guardarResumo(resumo);
       try { localStorage.setItem(CHAVE_RESUMO, JSON.stringify({ quando: new Date().toISOString(), resumo: resumo })); } catch (e) { /* ignora */ }
     } catch (erro) {
       let cache = null;
@@ -707,10 +789,17 @@
     let consulta = null;   // resposta de consultarArquivo
     let consultando = 0;
     let ultimoConsultado = ''; // evita consultar (e redesenhar) de novo o mesmo número
+    let lidoPelaCamera = false;
 
     el.innerHTML =
-      '<h2>Registrar</h2><p class="descricao">Digite o número do arquivo da etiqueta e escolha a situação.</p>' +
+      '<h2>Registrar</h2><p class="descricao">Fotografe a etiqueta ou digite o número do arquivo, confira os dados e escolha a situação.</p>' +
       '<form class="cartao form-registro" novalidate autocomplete="off">' +
+        '<div class="area-camera">' +
+          '<label class="botao largo grande botao-camera">' + ICONES.registrar + (ehCelular ? 'Ler etiqueta com a câmera' : 'Enviar foto da etiqueta') +
+            '<input type="file" accept="image/*" capture="environment" class="entrada-foto"></label>' +
+          '<div class="resultado-leitura"></div>' +
+          '<div class="ou"><span>ou digite</span></div>' +
+        '</div>' +
         '<div class="msg"></div>' +
         '<div class="campo"><label for="arq">Número do arquivo</label>' +
           '<input id="arq" name="arquivo" class="campo-arquivo" inputmode="numeric" pattern="[0-9]*" placeholder="Ex.: 64425" maxlength="8"></div>' +
@@ -932,6 +1021,9 @@
     const limparFormulario = function () {
       form.arquivo.value = '';
       ultimoConsultado = '';
+      lidoPelaCamera = false;
+      limparMarcasLeitura();
+      form.querySelector('.resultado-leitura').innerHTML = '';
       form.origem_id.value = ''; form.destino_id.value = '';
       form.total_volumes.value = 1; form.vendedor_nome.value = ''; form.observacao.value = '';
       limparConsulta();
@@ -999,7 +1091,7 @@
         vendedor_nome: form.vendedor_nome.value.trim(),
         cd_id: status === 'NO_CD' && !form.querySelector('.campo-cd').classList.contains('oculto') ? form.cd_id.value : '',
         observacao: form.observacao.value.trim(),
-        forma_registro: ehCelular ? 'MANUAL' : 'WEB',
+        forma_registro: lidoPelaCamera ? 'CAMERA' : (ehCelular ? 'MANUAL' : 'WEB'),
         id_cliente: novoIdCliente(),
         data_hora_cliente: new Date().toISOString()
       };
@@ -1009,6 +1101,101 @@
       await enviar(dados, botao);
       botao.disabled = false;
       botao.textContent = 'Registrar';
+    };
+
+    // ----- Leitura da etiqueta pela foto -----
+    const resultadoLeitura = form.querySelector('.resultado-leitura');
+    const campoDe = function (nome) { return form[nome] ? form[nome].closest('.campo') : null; };
+
+    function limparMarcasLeitura() {
+      form.querySelectorAll('.campo.conferir, .campo.faltou, .campo.lido').forEach(function (c) { c.classList.remove('conferir', 'faltou', 'lido'); });
+    }
+
+    const marcarCampo = function (nome, confianca) {
+      const c = campoDe(nome);
+      if (!c) return;
+      c.classList.remove('conferir', 'faltou', 'lido');
+      c.classList.add(confianca === 'faltou' ? 'faltou' : confianca === 'alta' ? 'lido' : 'conferir');
+      const tirar = function () { c.classList.remove('conferir', 'faltou'); };
+      form[nome].addEventListener('change', tirar, { once: true });
+      form[nome].addEventListener('input', tirar, { once: true });
+    };
+
+    const lerFoto = async function (arquivoFoto) {
+      if (!arquivoFoto) return;
+      msg.innerHTML = '';
+      if (!navigator.onLine) {
+        resultadoLeitura.innerHTML = '<div class="mensagem aviso">Sem internet: a leitura da foto precisa de conexão. Digite os dados abaixo.</div>';
+        return;
+      }
+      resultadoLeitura.innerHTML = '<div class="carregando pequeno"><div class="girando"></div>Lendo a etiqueta...</div>';
+      let leitura;
+      try {
+        const foto = await reduzirFoto(arquivoFoto, 1600, 0.85);
+        const r = await chamar('lerEtiqueta', { imagem: foto, mime: 'image/jpeg' });
+        if (!r.texto) {
+          resultadoLeitura.innerHTML = '<div class="mensagem erro">Não consegui ler nada na foto. Tente de novo mais perto da etiqueta, com boa luz, ou digite os dados.</div>';
+          return;
+        }
+        leitura = Leitor.interpretar(r.texto, Estado.base, { maiorArquivo: Estado.base.maior_arquivo });
+      } catch (erro) {
+        resultadoLeitura.innerHTML = '<div class="mensagem erro">' + esc(erro.offline ? 'Sem internet: digite os dados abaixo.' : erro.message) + '</div>';
+        return;
+      }
+      await aplicarLeitura(leitura);
+    };
+
+    const aplicarLeitura = async function (l) {
+      limparMarcasLeitura();
+      lidoPelaCamera = true;
+      // 1) Arquivo: consulta o servidor (se já existe, origem/destino vêm de lá)
+      form.arquivo.value = l.arquivo || '';
+      ultimoConsultado = '';
+      if (l.arquivo) await consultar(true); else { limparConsulta(); }
+      const existe = consulta && consulta.existe && consulta.transferencia;
+      const avisos = l.avisos.slice();
+      if (existe) {
+        const t = consulta.transferencia;
+        if (l.origem_id && l.origem_id !== t.origem_id || l.destino_id && l.destino_id !== t.destino_id) {
+          avisos.push('A etiqueta parece dizer ' + nomeLojaCurto(l.origem_id) + ' → ' + nomeLojaCurto(l.destino_id) +
+            ', mas o arquivo ' + t.arquivo + ' está registrado como ' + nomeLojaCurto(t.origem_id) + ' → ' + nomeLojaCurto(t.destino_id) + '. Confira o número.');
+          marcarCampo('arquivo', 'baixa');
+        }
+        if (l.volume_total > 1 && l.volume_total !== t.total_volumes) avisos.push('A etiqueta diz ' + l.volume_total + ' volumes; o arquivo está com ' + t.total_volumes + '.');
+        if (l.vendedor_nome && !form.vendedor_nome.value) { form.vendedor_nome.value = l.vendedor_nome; marcarCampo('vendedor_nome', l.confianca.vendedor); }
+      } else {
+        form.origem_id.value = l.origem_id || '';
+        form.destino_id.value = l.destino_id || '';
+        form.total_volumes.value = l.volume_total || 1;
+        form.vendedor_nome.value = l.vendedor_nome || '';
+        marcarCampo('origem_id', l.confianca.origem_id);
+        marcarCampo('destino_id', l.confianca.destino_id);
+        if (l.volume_total > 1) marcarCampo('total_volumes', l.confianca.volume);
+        if (l.vendedor_nome) marcarCampo('vendedor_nome', l.confianca.vendedor);
+      }
+      marcarCampo('arquivo', l.confianca.arquivo);
+      // 2) Volume da caixa fotografada
+      desenharVolumes();
+      if (Number(form.total_volumes.value) > 1 && l.volume_atual) {
+        form.querySelectorAll('input[name=vol]').forEach(function (c) { c.checked = Number(c.value) === l.volume_atual; });
+      }
+      atualizarVendedores();
+      desenharStatus();
+      // 3) Resumo do que foi lido
+      const precisaConferir = ['origem_id', 'destino_id', 'arquivo'].filter(function (c) { return l.confianca[c] !== 'alta'; }).length > 0 || avisos.length;
+      resultadoLeitura.innerHTML =
+        '<div class="mensagem ' + (precisaConferir ? 'aviso' : 'ok') + '">' +
+          '<b>' + (precisaConferir ? 'Confira os campos destacados antes de registrar.' : 'Etiqueta lida. Confira e registre.') + '</b>' +
+          (avisos.length ? '<ul class="lista-avisos">' + avisos.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul>' : '') +
+          '<details><summary>Texto lido da foto</summary><pre class="texto-lido">' + esc(l.texto) + '</pre></details>' +
+        '</div>';
+      resultadoLeitura.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
+
+    form.querySelector('.entrada-foto').onchange = function (e) {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      lerFoto(f);
     };
 
     desenharVolumes();
@@ -1115,6 +1302,503 @@
     desenhar();
   }
 
+  /** Diminui a foto para no máximo "lado" pixels e devolve em base64 (JPEG). */
+  function reduzirFoto(arquivo, lado, qualidade) {
+    return new Promise(function (ok, falha) {
+      const leitor = new FileReader();
+      leitor.onerror = function () { falha(new Error('Não foi possível abrir a foto.')); };
+      leitor.onload = function () {
+        const img = new Image();
+        img.onerror = function () { falha(new Error('Arquivo de imagem inválido.')); };
+        img.onload = function () {
+          const escala = Math.min(1, lado / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * escala);
+          c.height = Math.round(img.height * escala);
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          ok(c.toDataURL('image/jpeg', qualidade));
+        };
+        img.src = leitor.result;
+      };
+      leitor.readAsDataURL(arquivo);
+    });
+  }
+
+  /* =========================================================
+   *  DETALHE DE UM ARQUIVO (usado na lista)
+   * ========================================================= */
+  function cartaoArquivoHtml(consulta) {
+    const t = consulta.transferencia;
+    const pend = t.total_volumes - Object.keys(t.volumes_status || {}).filter(function (k) { return t.volumes_status[k] === t.status; }).length;
+    const vols = Object.keys(t.volumes_status || {});
+    return '<div class="cartao-arquivo">' +
+      '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + seloSituacao(t.status) + '</div>' +
+      '<div class="item-rota">' + esc(nomeLojaCurto(t.origem_id)) + ' → ' + esc(nomeLojaCurto(t.destino_id)) +
+        ' <span class="item-tempo">· desde ' + esc(dataHora(t.status_desde)) + '</span></div>' +
+      '<div class="lista-chips">' +
+        (t.vendedor_nome ? '<span class="selo vendedor">' + ICONES.pessoa + esc(t.vendedor_nome) + '</span>' : '') +
+        (t.total_volumes > 1 ? '<span class="selo">' + t.total_volumes + ' volumes</span>' : '') +
+        (vols.length && pend > 0 ? '<span class="selo erro">' + pend + ' volume(s) ainda não lido(s) nesta etapa</span>' : '') +
+      '</div>' +
+      (t.total_volumes > 1 && vols.length ? '<div class="volumes-situacao">' + vols.sort(function (a, b) { return a - b; }).map(function (v) {
+        return '<span>Vol. ' + esc(v) + '/' + t.total_volumes + ': <b>' + esc((NOMES_STATUS[t.volumes_status[v]] || {}).titulo || t.volumes_status[v]) + '</b></span>';
+      }).join('') + '</div>' : '') +
+      (t.ocorrencia ? '<div class="mensagem erro ocorrencia-aberta"><b>Ocorrência:</b> ' + esc(t.ocorrencia) + '</div>' : '') +
+      '<div class="historico"><b>Histórico</b>' + (linhaDoTempoHtml(consulta.eventos) || '<p class="descricao">Sem registros.</p>') + '</div>' +
+      '<p class="descricao pequena">Registrado em ' + esc(dataHora(t.criado_em)) + ' por ' + esc(t.criado_por || '—') + '.</p>' +
+    '</div>';
+  }
+
+  async function abrirDetalhe(arquivo) {
+    const form = abrirJanela('Arquivo ' + arquivo, '<div class="corpo-detalhe">' + carregandoHtml('Buscando...') + '</div>', {
+      textoSalvar: 'Registrar situação',
+      textoCancelar: 'Fechar',
+      aoSalvar: async function () { location.hash = '#/registrar?arq=' + encodeURIComponent(arquivo); }
+    });
+    const corpo = form.querySelector('.corpo-detalhe');
+    try {
+      const r = await chamar('consultarArquivo', { arquivo: arquivo });
+      if (r.semAcesso) corpo.innerHTML = '<div class="mensagem erro">Este arquivo não envolve a sua loja.</div>';
+      else if (!r.existe) corpo.innerHTML = '<div class="mensagem info">Arquivo não encontrado.</div>';
+      else corpo.innerHTML = cartaoArquivoHtml(r);
+    } catch (erro) {
+      corpo.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+    }
+  }
+
+  /* =========================================================
+   *  PERÍODO (usado na lista e nos relatórios)
+   * ========================================================= */
+  function diaIso(d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+
+  function intervaloPeriodo(codigo) {
+    const hoje = new Date();
+    const menos = function (dias) { const d = new Date(); d.setDate(d.getDate() - dias); return diaIso(d); };
+    switch (codigo) {
+      case 'HOJE': return { de: diaIso(hoje), ate: diaIso(hoje) };
+      case '7': return { de: menos(6), ate: diaIso(hoje) };
+      case '30': return { de: menos(29), ate: diaIso(hoje) };
+      case '90': return { de: menos(89), ate: diaIso(hoje) };
+      case 'MES': return { de: diaIso(new Date(hoje.getFullYear(), hoje.getMonth(), 1)), ate: diaIso(hoje) };
+      case 'MES_PASSADO': return { de: diaIso(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)), ate: diaIso(new Date(hoje.getFullYear(), hoje.getMonth(), 0)) };
+      case 'TODOS': return { de: '', ate: '' };
+      default: return null;
+    }
+  }
+
+  function campoPeriodoHtml(codigo, de, ate) {
+    const opcoes = [['HOJE', 'Hoje'], ['7', 'Últimos 7 dias'], ['30', 'Últimos 30 dias'], ['90', 'Últimos 90 dias'], ['MES', 'Este mês'],
+      ['MES_PASSADO', 'Mês passado'], ['TODOS', 'Todo o período'], ['PERSONALIZADO', 'Escolher datas...']];
+    return '<div class="campo"><label>Período (data do registro)</label><select name="periodo">' +
+      opcoes.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === codigo ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>' +
+      '<div class="linha-campos datas' + (codigo === 'PERSONALIZADO' ? '' : ' oculto') + '">' +
+        '<div class="campo"><label>De</label><input type="date" name="de" value="' + esc(de || '') + '"></div>' +
+        '<div class="campo"><label>Até</label><input type="date" name="ate" value="' + esc(ate || '') + '"></div>' +
+      '</div>';
+  }
+
+  function lerPeriodo(form) {
+    const codigo = form.periodo.value;
+    const p = intervaloPeriodo(codigo);
+    form.querySelector('.datas').classList.toggle('oculto', codigo !== 'PERSONALIZADO');
+    if (p) { form.de.value = p.de; form.ate.value = p.ate; return p; }
+    return { de: form.de.value, ate: form.ate.value };
+  }
+
+  function textoPeriodo(de, ate) {
+    if (!de && !ate) return 'todo o período';
+    if (de === ate) return data(de);
+    return (de ? data(de) : 'início') + ' a ' + (ate ? data(ate) : 'hoje');
+  }
+
+  /* =========================================================
+   *  PÁGINA: TRANSFERÊNCIAS (lista com filtros)
+   * ========================================================= */
+  const FiltrosLista = { periodo: '30', de: '', ate: '', origem_id: '', destino_id: '', situacao: '', arquivo: '', vendedor: '' };
+
+  function paginaTransferencias(el) {
+    const parametros = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (parametros.get('situacao')) { FiltrosLista.situacao = parametros.get('situacao'); FiltrosLista.periodo = 'TODOS'; }
+    const f = FiltrosLista;
+    const situacoes = [['', 'Todas'], ['ABERTOS', 'Em aberto (não entregues)'], ['ATENCAO', 'Precisam de atenção'], ['SEPARADA', 'Aguardando coleta'],
+      ['COM_MOTORISTA', 'Com motorista'], ['NO_CD', 'No CD'], ['ENTREGUE', 'Entregues']];
+    const lojasOpcoes = function (sel) {
+      return '<option value="">Todas</option>' + lojasOrdenadas(function (l) { return l.tipo === 'LOJA'; }).map(function (l) {
+        return '<option value="' + esc(l.id) + '"' + (l.id === sel ? ' selected' : '') + '>' + esc(nomeLojaCurto(l.id)) + '</option>';
+      }).join('');
+    };
+    el.innerHTML =
+      '<h2>Transferências</h2><p class="descricao">Procure arquivos por período, loja, situação, número ou vendedor.</p>' +
+      '<details class="cartao filtros" open><summary><b>Filtros</b><span class="resumo-filtros"></span></summary>' +
+      '<form class="form-filtros" novalidate>' +
+        '<div class="grade-filtros">' +
+          '<div class="bloco-periodo">' + campoPeriodoHtml(f.periodo, f.de, f.ate) + '</div>' +
+          '<div class="campo"><label>Situação</label><select name="situacao">' + situacoes.map(function (s) {
+            return '<option value="' + s[0] + '"' + (s[0] === f.situacao ? ' selected' : '') + '>' + s[1] + '</option>'; }).join('') + '</select></div>' +
+          '<div class="campo"><label>De (origem)</label><select name="origem_id">' + lojasOpcoes(f.origem_id) + '</select></div>' +
+          '<div class="campo"><label>Para (destino)</label><select name="destino_id">' + lojasOpcoes(f.destino_id) + '</select></div>' +
+          '<div class="campo"><label>Número do arquivo</label><input name="arquivo" inputmode="numeric" value="' + esc(f.arquivo) + '" placeholder="Ex.: 64425"></div>' +
+          '<div class="campo"><label>Vendedor</label><input name="vendedor" value="' + esc(f.vendedor) + '" placeholder="Ex.: Julio"></div>' +
+        '</div>' +
+        '<div class="barra-acoes"><button type="button" class="botao secundario" data-limpar>Limpar filtros</button><span class="espaco"></span>' +
+          '<button type="button" class="botao secundario" data-excel>' + ICONES.baixar + 'Baixar Excel</button></div>' +
+      '</form></details>' +
+      '<div class="resultado-lista"></div>';
+
+    const form = el.querySelector('form');
+    const saida = el.querySelector('.resultado-lista');
+    let ultimo = null;
+    let pedido = 0;
+
+    const filtrosAtuais = function () {
+      const p = lerPeriodo(form);
+      Object.assign(FiltrosLista, {
+        periodo: form.periodo.value, de: p.de, ate: p.ate, origem_id: form.origem_id.value, destino_id: form.destino_id.value,
+        situacao: form.situacao.value, arquivo: form.arquivo.value.replace(/\D/g, ''), vendedor: form.vendedor.value.trim()
+      });
+      return { de: p.de, ate: p.ate, origem_id: FiltrosLista.origem_id, destino_id: FiltrosLista.destino_id, situacao: FiltrosLista.situacao, arquivo: FiltrosLista.arquivo, vendedor: FiltrosLista.vendedor };
+    };
+
+    const buscar = async function () {
+      const filtros = filtrosAtuais();
+      const meu = ++pedido;
+      el.querySelector('.resumo-filtros').textContent = ' · ' + textoPeriodo(filtros.de, filtros.ate);
+      saida.innerHTML = carregandoHtml('Buscando arquivos...');
+      try {
+        const r = await chamar('listarTransferencias', filtros);
+        if (meu !== pedido) return;
+        ultimo = { filtros: filtros, r: r };
+        const abertos = r.itens.filter(function (t) { return t.status !== 'ENTREGUE'; }).length;
+        const atencao = r.itens.filter(function (t) { return (t.status !== 'ENTREGUE' && t.atrasado) || t.volumes_pendentes > 0 || t.ocorrencia; }).length;
+        saida.innerHTML =
+          '<div class="resumo-lista"><b>' + r.total + '</b> arquivo(s) · ' + abertos + ' em aberto · ' + (r.itens.length - abertos) + ' entregue(s)' +
+            (atencao ? ' · <span class="texto-erro">' + atencao + ' precisam de atenção</span>' : '') +
+            (r.limitado ? '<br><small>Mostrando os ' + r.itens.length + ' mais recentes. Use os filtros para refinar.</small>' : '') + '</div>' +
+          listaArquivosHtml(r.itens, 'ambos', 'Nenhum arquivo encontrado com esses filtros.');
+      } catch (erro) {
+        if (meu === pedido) saida.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+      }
+    };
+
+    let espera;
+    const buscarDepois = function () { clearTimeout(espera); espera = setTimeout(buscar, 450); };
+    form.onchange = function (e) { if (e.target.name !== 'arquivo' && e.target.name !== 'vendedor') buscar(); };
+    form.arquivo.oninput = buscarDepois;
+    form.vendedor.oninput = buscarDepois;
+    form.onsubmit = function (e) { e.preventDefault(); buscar(); };
+    el.querySelector('[data-limpar]').onclick = function () {
+      Object.assign(FiltrosLista, { periodo: '30', de: '', ate: '', origem_id: '', destino_id: '', situacao: '', arquivo: '', vendedor: '' });
+      location.hash = '#/transferencias';
+      paginaTransferencias(el);
+    };
+    el.querySelector('[data-excel]').onclick = function () {
+      if (!ultimo) return;
+      Xlsx.baixar('transferencias-' + diaIso(new Date()) + '.xlsx', [abaTransferencias(ultimo.r.itens)]);
+    };
+    saida.addEventListener('click', function (e) {
+      const a = e.target.closest('a.item-arquivo');
+      if (!a) return;
+      e.preventDefault();
+      abrirDetalhe(decodeURIComponent(a.getAttribute('href').split('arq=')[1] || ''));
+    });
+    if (window.matchMedia('(max-width: 700px)').matches) el.querySelector('details.filtros').open = false;
+    buscar();
+  }
+
+  function abaTransferencias(itens) {
+    return {
+      nome: 'Transferências',
+      colunas: [{ titulo: 'Arquivo', largura: 10 }, { titulo: 'Origem', largura: 26 }, { titulo: 'Destino', largura: 26 }, { titulo: 'Situação', largura: 18 },
+        { titulo: 'Na situação desde', largura: 17 }, { titulo: 'Dias na situação', largura: 10 }, { titulo: 'Volumes', largura: 9 },
+        { titulo: 'Volumes faltando', largura: 10 }, { titulo: 'Vendedor', largura: 16 }, { titulo: 'Atrasado', largura: 9 },
+        { titulo: 'Ocorrência', largura: 40 }, { titulo: 'Registrado em', largura: 17 }, { titulo: 'Registrado por', largura: 18 },
+        { titulo: 'Última atualização', largura: 17 }, { titulo: 'Atualizado por', largura: 18 }],
+      linhas: itens.map(function (t) {
+        return [Number(t.arquivo) || t.arquivo, nomeLojaCurto(t.origem_id), nomeLojaCurto(t.destino_id), (SITUACOES[t.status] || {}).texto || t.status,
+          dataHora(t.desde), t.dias, t.total_volumes, t.volumes_pendentes || 0, t.vendedor_nome || '', t.atrasado ? 'Sim' : '',
+          t.ocorrencia || '', dataHora(t.criado_em), t.criado_por || '', dataHora(t.atualizado_em), t.atualizado_por || ''];
+      })
+    };
+  }
+
+  /* =========================================================
+   *  PÁGINA: RELATÓRIOS
+   * ========================================================= */
+  const FiltroRelatorio = { periodo: 'MES', de: '', ate: '' };
+
+  function paginaRelatorios(el) {
+    el.innerHTML =
+      '<h2>Relatórios</h2><p class="descricao">Resumo das transferências no período, por loja e por vendedor. Tudo pode ser baixado em Excel.</p>' +
+      '<form class="cartao form-relatorio" novalidate><div class="grade-filtros">' +
+        '<div class="bloco-periodo">' + campoPeriodoHtml(FiltroRelatorio.periodo, FiltroRelatorio.de, FiltroRelatorio.ate) + '</div>' +
+      '</div><div class="barra-acoes"><span class="espaco"></span>' +
+        '<button type="button" class="botao" data-excel disabled>' + ICONES.baixar + 'Baixar relatório completo em Excel</button></div></form>' +
+      '<div class="resultado-relatorio"></div>';
+    const form = el.querySelector('form');
+    const saida = el.querySelector('.resultado-relatorio');
+    let atual = null;
+    let pedido = 0;
+
+    const n = function (v) { return v === null || v === undefined ? '—' : String(v).replace('.', ','); };
+
+    const carregar = async function () {
+      const p = lerPeriodo(form);
+      Object.assign(FiltroRelatorio, { periodo: form.periodo.value, de: p.de, ate: p.ate });
+      const meu = ++pedido;
+      el.querySelector('[data-excel]').disabled = true;
+      saida.innerHTML = carregandoHtml('Calculando...');
+      try {
+        const r = await chamar('relatorio', { de: p.de, ate: p.ate });
+        if (meu !== pedido) return;
+        atual = r;
+        const t = r.totais;
+        saida.innerHTML =
+          '<p class="descricao">Período: <b>' + esc(textoPeriodo(r.de, r.ate)) + '</b>. "Em aberto", "atrasados" e "no CD" mostram a situação de agora.</p>' +
+          '<div class="grade">' +
+            numeroHtml(t.arquivos, 'Arquivos registrados no período', '', 'caixa') +
+            numeroHtml(t.entregues, 'Entregues no período', '', 'certo') +
+            numeroHtml(n(t.dias_medio_entrega), 'Dias em média até a entrega', '', 'caminhao') +
+            numeroHtml(t.em_aberto, 'Em aberto agora', '', 'lista') +
+            numeroHtml(t.atrasados, 'Atrasados agora', t.atrasados ? 'realce-erro' : '', 'alerta') +
+            numeroHtml(t.no_cd, 'No CD agora', 'cd', 'armazem') +
+            numeroHtml(t.ocorrencias, 'Ocorrências no período', t.ocorrencias ? 'realce-erro' : '', 'alerta') +
+          '</div>' +
+          blocoHtml('Por loja', '<div class="tabela-rolagem"><table class="tabela"><thead><tr><th>Loja</th><th>Enviados</th><th>Recebidos</th><th>A receber</th>' +
+            '<th>Aguardando coleta</th><th>Atrasados</th><th>Ocorrências</th><th>Dias até entrega</th></tr></thead><tbody>' +
+            r.por_loja.map(function (l) {
+              return '<tr><td data-rotulo="Loja"><b>' + esc(nomeLojaCurto(l.loja_id)) + '</b></td><td data-rotulo="Enviados">' + l.enviados + '</td>' +
+                '<td data-rotulo="Recebidos">' + l.recebidos + '</td><td data-rotulo="A receber">' + l.a_receber + '</td>' +
+                '<td data-rotulo="Aguardando coleta">' + l.aguardando_coleta + '</td>' +
+                '<td data-rotulo="Atrasados">' + (l.atrasados ? '<span class="texto-erro">' + l.atrasados + '</span>' : 0) + '</td>' +
+                '<td data-rotulo="Ocorrências">' + l.ocorrencias + '</td><td data-rotulo="Dias até entrega">' + n(l.dias_medio_entrega) + '</td></tr>';
+            }).join('') + '</tbody></table></div>') +
+          blocoHtml('Por vendedor (' + r.por_vendedor.length + ')', r.por_vendedor.length ?
+            '<div class="tabela-rolagem"><table class="tabela"><thead><tr><th>Vendedor</th><th>Loja (destino)</th><th>Arquivos</th><th>Entregues</th><th>Em aberto</th></tr></thead><tbody>' +
+            r.por_vendedor.map(function (v) {
+              return '<tr><td data-rotulo="Vendedor"><b>' + esc(v.vendedor_nome) + '</b></td><td data-rotulo="Loja">' + esc(nomeLojaCurto(v.destino_id)) + '</td>' +
+                '<td data-rotulo="Arquivos">' + v.arquivos + '</td><td data-rotulo="Entregues">' + v.entregues + '</td><td data-rotulo="Em aberto">' + v.em_aberto + '</td></tr>';
+            }).join('') + '</tbody></table></div>' : '<div class="vazio pequeno">Nenhum arquivo com vendedor no período.</div>');
+        ativarBlocos(saida);
+        el.querySelector('[data-excel]').disabled = false;
+      } catch (erro) {
+        if (meu === pedido) saida.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+      }
+    };
+
+    form.onchange = carregar;
+    form.onsubmit = function (e) { e.preventDefault(); carregar(); };
+    el.querySelector('[data-excel]').onclick = async function () {
+      const botao = this;
+      if (!atual) return;
+      botao.disabled = true;
+      const textoBotao = botao.innerHTML;
+      botao.textContent = 'Preparando...';
+      try {
+        const [lista, eventos] = await Promise.all([
+          chamar('listarTransferencias', { de: atual.de, ate: atual.ate }),
+          chamar('listarEventos', { de: atual.de, ate: atual.ate })
+        ]);
+        const t = atual.totais;
+        Xlsx.baixar('relatorio-' + (atual.de || 'inicio') + '-a-' + (atual.ate || diaIso(new Date())) + '.xlsx', [
+          { nome: 'Resumo', colunas: [{ titulo: 'Indicador', largura: 40 }, { titulo: 'Valor', largura: 14 }], linhas: [
+            ['Empresa', (Estado.base.config || {}).empresa_nome || ''], ['Período', textoPeriodo(atual.de, atual.ate)],
+            ['Gerado em', dataHora(new Date().toISOString())], ['Arquivos registrados no período', t.arquivos], ['Entregues no período', t.entregues],
+            ['Dias em média até a entrega', t.dias_medio_entrega === null ? '' : t.dias_medio_entrega], ['Em aberto agora', t.em_aberto],
+            ['Atrasados agora', t.atrasados], ['No CD agora', t.no_cd], ['Ocorrências no período', t.ocorrencias]] },
+          { nome: 'Por loja', colunas: [{ titulo: 'Loja', largura: 28 }, { titulo: 'Enviados', largura: 10 }, { titulo: 'Recebidos', largura: 10 },
+            { titulo: 'A receber', largura: 10 }, { titulo: 'Aguardando coleta', largura: 12 }, { titulo: 'Atrasados', largura: 10 },
+            { titulo: 'Ocorrências', largura: 11 }, { titulo: 'Dias até entrega (média)', largura: 14 }],
+            linhas: atual.por_loja.map(function (l) { return [nomeLojaCurto(l.loja_id), l.enviados, l.recebidos, l.a_receber, l.aguardando_coleta, l.atrasados, l.ocorrencias, l.dias_medio_entrega === null ? '' : l.dias_medio_entrega]; }) },
+          { nome: 'Por vendedor', colunas: [{ titulo: 'Vendedor', largura: 20 }, { titulo: 'Loja (destino)', largura: 28 }, { titulo: 'Arquivos', largura: 10 },
+            { titulo: 'Entregues', largura: 10 }, { titulo: 'Em aberto', largura: 10 }],
+            linhas: atual.por_vendedor.map(function (v) { return [v.vendedor_nome, nomeLojaCurto(v.destino_id), v.arquivos, v.entregues, v.em_aberto]; }) },
+          abaTransferencias(lista.itens),
+          { nome: 'Histórico de registros', colunas: [{ titulo: 'Data e hora', largura: 17 }, { titulo: 'Arquivo', largura: 10 }, { titulo: 'Origem', largura: 24 },
+            { titulo: 'Destino', largura: 24 }, { titulo: 'Registro', largura: 22 }, { titulo: 'Volumes', largura: 9 }, { titulo: 'Local', largura: 22 },
+            { titulo: 'Usuário', largura: 18 }, { titulo: 'Forma', largura: 9 }, { titulo: 'Observação', largura: 40 }],
+            linhas: eventos.map(function (e) {
+              const nomeEv = e.status === 'OCORRENCIA' ? 'Ocorrência' : e.status === 'OCORRENCIA_RESOLVIDA' ? 'Ocorrência resolvida' : ((NOMES_STATUS[e.status] || {}).titulo || e.status);
+              const forma = { CAMERA: 'Câmera', MANUAL: 'Celular', WEB: 'Computador' }[e.forma_registro] || e.forma_registro;
+              return [dataHora(e.data_hora), Number(e.arquivo) || e.arquivo, nomeLojaCurto(e.origem_id), nomeLojaCurto(e.destino_id), nomeEv, e.volumes, e.local_id ? nomeLojaCurto(e.local_id) : '', e.usuario_nome, forma, e.observacao];
+            }) }
+        ]);
+      } catch (erro) {
+        toast(erro.message, true);
+      }
+      botao.disabled = false;
+      botao.innerHTML = textoBotao;
+    };
+    carregar();
+  }
+
+  /* =========================================================
+   *  CONFIGURAÇÕES: APARÊNCIA (logo e cor)
+   * ========================================================= */
+  function reduzirLogo(arquivo) {
+    return new Promise(function (ok, falha) {
+      const leitor = new FileReader();
+      leitor.onerror = function () { falha(new Error('Não foi possível abrir a imagem.')); };
+      leitor.onload = function () {
+        const img = new Image();
+        img.onerror = function () { falha(new Error('Arquivo de imagem inválido.')); };
+        img.onload = function () {
+          const tentativas = [180, 140, 110, 90, 70];
+          for (let i = 0; i < tentativas.length; i++) {
+            const escala = Math.min(1, tentativas[i] / Math.max(img.width, img.height));
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, Math.round(img.width * escala));
+            c.height = Math.max(1, Math.round(img.height * escala));
+            c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+            let url = c.toDataURL('image/png');
+            if (url.length > 44000) url = c.toDataURL('image/webp', 0.9);
+            if (url.indexOf('data:image/webp') !== 0 && url.length > 44000) continue;
+            if (url.length <= 44000) return ok(url);
+          }
+          falha(new Error('A imagem é muito detalhada. Tente um logo mais simples.'));
+        };
+        img.src = leitor.result;
+      };
+      leitor.readAsDataURL(arquivo);
+    });
+  }
+
+  function paginaAparencia(el) {
+    const corpo = cabecalhoConfig(el, '#/config/aparencia');
+    const c = Estado.base.config;
+    let logo = c.empresa_logo || '';
+    const cores = ['#1d4ed8', '#0f766e', '#15803d', '#b91c1c', '#c2410c', '#7c3aed', '#be185d', '#334155'];
+    corpo.innerHTML = '<form class="cartao" style="max-width:560px" novalidate><div class="msg"></div>' +
+      '<div class="campo"><label>Logo da empresa</label>' +
+        '<div class="previa-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span class="descricao">Sem logo</span>') + '</div>' +
+        '<div class="barra-acoes"><label class="botao secundario">Escolher imagem<input type="file" accept="image/*" class="oculto" data-logo></label>' +
+        '<button type="button" class="botao secundario" data-remover>Remover logo</button></div>' +
+        '<div class="ajuda">Aparece no topo do sistema e na tela de entrada. A imagem é reduzida automaticamente.</div></div>' +
+      '<div class="campo"><label>Cor principal</label><div class="cores">' +
+        cores.map(function (cor) { return '<button type="button" class="amostra-cor" data-cor="' + cor + '" style="background:' + cor + '" aria-label="' + cor + '"></button>'; }).join('') +
+        '<input type="color" name="cor" value="' + esc(c.cor_principal || '#1d4ed8') + '"></div></div>' +
+      '<button class="botao" type="submit">Salvar aparência</button></form>';
+    const form = corpo.querySelector('form');
+    const previa = form.querySelector('.previa-logo');
+    form.querySelector('[data-logo]').onchange = async function (e) {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      try {
+        logo = await reduzirLogo(f);
+        previa.innerHTML = '<img src="' + esc(logo) + '" alt="">';
+      } catch (erro) { toast(erro.message, true); }
+    };
+    form.querySelector('[data-remover]').onclick = function () { logo = ''; previa.innerHTML = '<span class="descricao">Sem logo</span>'; };
+    form.querySelectorAll('[data-cor]').forEach(function (b) {
+      b.onclick = function () { form.cor.value = b.dataset.cor; aplicarTema({ cor_principal: b.dataset.cor }); };
+    });
+    form.cor.oninput = function () { aplicarTema({ cor_principal: form.cor.value }); };
+    form.onsubmit = async function (e) {
+      e.preventDefault();
+      const botao = form.querySelector('button[type=submit]');
+      botao.disabled = true;
+      try {
+        Estado.base.config = await chamar('salvarConfig', { itens: { empresa_logo: logo, cor_principal: form.cor.value } });
+        salvarCacheBase(Estado.base);
+        aplicarTema(Estado.base.config);
+        toast('Aparência salva.');
+        rotear();
+      } catch (erro) {
+        form.querySelector('.msg').innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+        botao.disabled = false;
+      }
+    };
+  }
+
+  /* =========================================================
+   *  CONFIGURAÇÕES: LEITURA DE ETIQUETAS
+   * ========================================================= */
+  function paginaLeitura(el) {
+    const corpo = cabecalhoConfig(el, '#/config/leitura');
+    const c = Estado.base.config;
+    const servico = c.ocr_servico || 'GEMINI';
+    corpo.innerHTML =
+      '<form class="cartao" style="max-width:640px" novalidate><div class="msg"></div>' +
+        '<div class="campo"><label>Serviço que lê a foto</label><select name="servico">' +
+          '<option value="GEMINI"' + (servico === 'GEMINI' ? ' selected' : '') + '>Gemini (recomendado: melhor com letra de mão)</option>' +
+          '<option value="VISION"' + (servico === 'VISION' ? ' selected' : '') + '>Google Cloud Vision</option>' +
+          '<option value="DRIVE"' + (servico === 'DRIVE' ? ' selected' : '') + '>OCR do Google Drive (sem chave, lê pior)</option>' +
+        '</select></div>' +
+        '<div class="explica explica-GEMINI"><div class="mensagem info"><b>Como pegar a chave do Gemini (grátis, sem cartão):</b><ol>' +
+          '<li>Entre em <b>aistudio.google.com</b> com a conta Google da empresa.</li>' +
+          '<li>Clique em <b>Get API key</b> e depois em <b>Criar chave de API</b>.</li><li>Copie a chave e cole no campo abaixo.</li></ol>' +
+          'No plano gratuito há um limite diário de leituras, e o Google pode usar as fotos enviadas para melhorar os serviços dele (são só fotos de etiquetas).</div></div>' +
+        '<div class="explica explica-VISION"><div class="mensagem info"><b>Google Cloud Vision:</b> as primeiras 1.000 leituras do mês são grátis, mas o Google exige cadastrar um cartão (faturamento) no Google Cloud. ' +
+          'Crie um projeto em console.cloud.google.com, ative a "Cloud Vision API" e crie uma chave de API.</div></div>' +
+        '<div class="explica explica-DRIVE"><div class="mensagem info"><b>OCR do Google Drive:</b> não precisa de chave e é grátis, mas lê letra de mão bem pior. ' +
+          'Na primeira leitura pode ser preciso autorizar o acesso ao Drive no Apps Script (rode a função configurarPlanilha de novo).</div></div>' +
+        '<div class="campo campo-chave"><label>Chave da API</label><input name="chave" type="password" autocomplete="off" placeholder="' +
+          (c.ocr_chave_configurada === 'SIM' ? '•••••••• chave já configurada (deixe em branco para manter)' : 'Cole aqui a chave') + '">' +
+          '<div class="ajuda">A chave fica guardada só no servidor. Os usuários nunca veem.</div></div>' +
+        '<div class="campo campo-modelo"><label>Modelo do Gemini</label><input name="modelo" value="' + esc(c.ocr_modelo || 'gemini-3.5-flash-lite') + '">' +
+          '<div class="ajuda">Só mude se o Google desativar este modelo (veja a lista em aistudio.google.com).</div></div>' +
+        '<button class="botao" type="submit">Salvar</button>' +
+      '</form>' +
+      '<div class="cartao" style="max-width:640px"><h3 style="margin-top:0">Testar leitura</h3>' +
+        '<p class="descricao">Envie a foto de uma etiqueta para ver o que o sistema entende. Nada é registrado.</p>' +
+        '<label class="botao secundario">' + ICONES.registrar + 'Escolher foto<input type="file" accept="image/*" capture="environment" class="oculto" data-teste></label>' +
+        '<div class="resultado-teste"></div></div>';
+    const form = corpo.querySelector('form');
+    const ajustar = function () {
+      const s = form.servico.value;
+      corpo.querySelectorAll('.explica').forEach(function (e) { e.classList.toggle('oculto', !e.classList.contains('explica-' + s)); });
+      form.querySelector('.campo-chave').classList.toggle('oculto', s === 'DRIVE');
+      form.querySelector('.campo-modelo').classList.toggle('oculto', s !== 'GEMINI');
+    };
+    form.servico.onchange = ajustar;
+    ajustar();
+    form.onsubmit = async function (e) {
+      e.preventDefault();
+      const itens = { ocr_servico: form.servico.value, ocr_modelo: form.modelo.value.trim() || 'gemini-3.5-flash-lite' };
+      if (form.chave.value.trim()) itens.ocr_chave = form.chave.value.trim();
+      const botao = form.querySelector('button[type=submit]');
+      botao.disabled = true;
+      try {
+        Estado.base.config = await chamar('salvarConfig', { itens: itens });
+        salvarCacheBase(Estado.base);
+        toast('Configuração de leitura salva.');
+        paginaLeitura(el);
+      } catch (erro) {
+        form.querySelector('.msg').innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+        botao.disabled = false;
+      }
+    };
+    corpo.querySelector('[data-teste]').onchange = async function (e) {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const saida = corpo.querySelector('.resultado-teste');
+      saida.innerHTML = carregandoHtml('Lendo a etiqueta...');
+      try {
+        const foto = await reduzirFoto(f, 1600, 0.85);
+        const r = await chamar('lerEtiqueta', { imagem: foto, mime: 'image/jpeg' });
+        const l = Leitor.interpretar(r.texto || '', Estado.base, { maiorArquivo: Estado.base.maior_arquivo });
+        const conf = function (c) { return { alta: '<span class="selo ok">certo</span>', media: '<span class="selo aviso">conferir</span>', baixa: '<span class="selo aviso">conferir</span>', faltou: '<span class="selo erro">não leu</span>', padrao: '<span class="selo">padrão</span>' }[c] || ''; };
+        saida.innerHTML = '<div class="teste-leitura"><img src="' + foto + '" alt="">' +
+          '<table class="tabela"><tbody>' +
+            '<tr><td>Origem</td><td><b>' + esc(l.origem_id ? nomeLojaCurto(l.origem_id) : '—') + '</b> ' + conf(l.confianca.origem_id) + '</td></tr>' +
+            '<tr><td>Destino</td><td><b>' + esc(l.destino_id ? nomeLojaCurto(l.destino_id) : '—') + '</b> ' + conf(l.confianca.destino_id) + '</td></tr>' +
+            '<tr><td>Arquivo</td><td><b>' + esc(l.arquivo || '—') + '</b> ' + conf(l.confianca.arquivo) + '</td></tr>' +
+            '<tr><td>Volume</td><td><b>' + l.volume_atual + '/' + l.volume_total + '</b> ' + conf(l.confianca.volume) + '</td></tr>' +
+            '<tr><td>Vendedor</td><td><b>' + esc(l.vendedor_nome || '—') + '</b> ' + (l.vendedor_nome ? conf(l.confianca.vendedor) : '') + '</td></tr>' +
+          '</tbody></table></div>' +
+          (l.avisos.length ? '<div class="mensagem aviso"><ul class="lista-avisos">' + l.avisos.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul></div>' : '') +
+          '<div class="campo"><label>Texto lido pelo ' + esc(r.servico) + '</label><pre class="texto-lido">' + esc(r.texto || '(nada)') + '</pre></div>';
+      } catch (erro) {
+        saida.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+      }
+    };
+  }
+
   /* =========================================================
    *  PÁGINA: TROCAR SENHA
    * ========================================================= */
@@ -1149,6 +1833,8 @@
       ['#/config/vendedores', 'Vendedores'],
       ['#/config/usuarios', 'Usuários'],
       ['#/config/parametros', 'Parâmetros'],
+      ['#/config/aparencia', 'Aparência'],
+      ['#/config/leitura', 'Leitura de etiquetas'],
       ['#/config/historico', 'Histórico']
     ];
     el.innerHTML =
@@ -1530,6 +2216,7 @@
   }
 
   async function iniciar() {
+    aplicarTema((lerCacheBase() || {}).config);
     window.addEventListener('online', function () { if (Estado.usuario) Fila.sincronizar(); });
     setInterval(function () { if (Estado.usuario && navigator.onLine) Fila.sincronizar(); }, 60000);
     window.addEventListener('online', atualizarFaixaOffline);
