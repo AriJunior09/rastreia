@@ -649,7 +649,7 @@
         numeroHtml(r.no_cd, 'No CD', 'cd', 'armazem') +
       '</div>';
     if (r.em_aberto + r.entregues_hoje === 0) html += avisoFaseHtml();
-    if (lojasColeta) html += blocoHtml('Onde tem mercadoria para coletar', '<div class="lista-chips">' + lojasColeta + '</div>');
+    if (lojasColeta) html += blocoHtml('Aguardando coleta', '<div class="lista-chips">' + lojasColeta + '</div>');
     if (r.atencao.length) html += blocoHtml('Precisam de atenção (' + r.atencao.length + ')', listaArquivosHtml(r.atencao, 'ambos'), '<span class="selo erro">' + ICONES.alerta + 'Atenção</span>');
     html += blocoHtml('No CD (' + r.no_cd + ')', listaArquivosHtml(r.lista_cd, 'ambos', 'Nada parado no CD.'));
     html += blocoHtml('Com motorista (' + r.com_motorista + ')', listaArquivosHtml(r.lista_motorista, 'ambos', 'Nenhum arquivo em trânsito.'));
