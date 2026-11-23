@@ -577,14 +577,14 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .rota-titulo svg { width: 20px; height: 20px; color: var(--cor-primaria); }
 .rota-estado { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); }
 .rota-estado.e-aguardando { background: #f1f5f9; color: #475569; }
-.rota-estado.e-retornando { background: #ede9fe; color: #6d28d9; }
+.rota-estado.e-voltando { background: #ede9fe; color: #6d28d9; }
 .rota-estado.e-concluida { background: var(--cor-ok-clara); color: var(--cor-ok); }
 .rota-rolagem { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; padding: 0 4px; }
-.rota-trilha { position: relative; height: 118px; margin: 0 28px; }
+.rota-trilha { position: relative; height: 118px; margin: 0 24px; }
 .rota-linha, .rota-linha-feita { position: absolute; top: 46px; left: 0; height: 0; }
 .rota-linha { right: 0; border-top: 3px dotted #cbd5e1; }
 .rota-linha-feita { border-top: 3px solid var(--cor-primaria); transition: width 2.5s ease; }
-.rota-parada { position: absolute; top: 38px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; width: 66px; text-align: center; }
+.rota-parada { position: absolute; top: 38px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; width: 58px; text-align: center; }
 .rota-parada .ponto { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid #cbd5e1; z-index: 1; }
 .rota-parada.passou .ponto { background: var(--cor-primaria); border-color: var(--cor-primaria); }
 .rota-parada.atual .ponto { box-shadow: 0 0 0 5px var(--cor-primaria-clara); }
@@ -604,14 +604,12 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .rota-veiculo::after { content: ''; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 6px solid var(--cor-primaria); }
 .rota-veiculo svg { width: 22px; height: 22px; animation: trepidar .5s ease-in-out infinite; }
 .rota-veiculo.andando svg { animation-duration: .25s; }
-.rota-veiculo.voltando { background: #7c3aed; animation: voltar 7s linear infinite; }
+.rota-veiculo.voltando { background: #7c3aed; }
 .rota-veiculo.voltando::after { border-top-color: #7c3aed; }
-.rota-veiculo.voltando svg { transform: scaleX(-1); animation: none; }
 .rota-veiculo.chegou { background: var(--cor-ok); }
 .rota-veiculo.chegou::after { border-top-color: var(--cor-ok); }
 .rota-veiculo.chegou svg { animation: none; }
 @keyframes trepidar { 50% { transform: translateY(-1.5px); } }
-@keyframes voltar { from { left: 100%; } to { left: 0%; } }
 .rota-rodape { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--texto-suave); }
 .rota-rodape svg { width: 15px; height: 15px; }
 .rota-botoes { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; border-top: 1px solid var(--borda); padding-top: 10px; }
@@ -634,3 +632,13 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .item-rota-dia { display: flex; flex-direction: column; background: var(--cartao); border-radius: 12px; padding: 10px 14px; text-decoration: none; color: inherit; box-shadow: var(--sombra); font-size: 14px; }
 .item-rota-dia.atual { box-shadow: inset 4px 0 0 var(--cor-primaria), var(--sombra); }
 .item-rota-dia small { color: var(--texto-suave); }
+
+/* Trecho final da volta para a saída */
+.rota-linha.com-volta { right: auto; }
+.rota-trecho-volta { position: absolute; top: 46px; right: 0; height: 0; border-top: 3px dashed #c4b5fd; }
+.rota-trecho-volta span {
+  position: absolute; top: -22px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 700;
+  color: #7c3aed; background: #f5f3ff; padding: 1px 6px; border-radius: 999px; white-space: nowrap;
+}
+.rota-parada.chegada .ponto { border-style: dashed; }
+.rota-parada.chegada.passou .ponto { background: var(--cor-ok); border-color: var(--cor-ok); border-style: solid; }

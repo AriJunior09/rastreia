@@ -605,19 +605,29 @@
   /** Aviso para o gerente quando a loja dele está na rota de hoje. */
   function avisoRotaGerente(rota, lojaId, aguardandoColeta) {
     if (!rota || !lojaId) return '';
-    const idx = rota.paradas.map(function (p) { return p.loja_id; }).indexOf(lojaId);
-    if (idx < 0) return '';
-    const p = rota.paradas[idx];
-    const hora = function (iso) { return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+    const indices = [];
+    rota.paradas.forEach(function (p, i) { if (p.loja_id === lojaId) indices.push(i); });
+    if (!indices.length) return '';
+    // A parada que importa agora: a primeira por onde ele ainda não passou (ou a última, se já passou por todas)
+    const idx = indices.filter(function (i) { return !rota.paradas[i].passou_em; })[0];
+    const i = idx === undefined ? indices[indices.length - 1] : idx;
+    const p = rota.paradas[i];
+    const ehChegada = !!p.chegada;
     let texto, classe = 'rota-aviso';
-    if (rota.estado === 'NA_PARADA' && rota.indice === idx) {
+    if (rota.estado === 'NA_PARADA' && rota.indice === i) {
       texto = '<b>O motorista está na sua loja agora!</b>';
       classe += ' agora';
-    } else if (p.passou_em) {
-      texto = 'O motorista já passou na sua loja hoje, às ' + hora(p.passou_em) + '.';
+    } else if (rota.estado === 'CONCLUIDA' && ehChegada) {
+      texto = 'O motorista voltou para a sua loja às ' + horaCurta(p.passou_em) + '. Rota concluída.';
       classe += ' feito';
+    } else if (p.passou_em) {
+      texto = 'O motorista já passou na sua loja hoje, às ' + horaCurta(p.passou_em) + '.';
+      classe += ' feito';
+    } else if (ehChegada) {
+      texto = rota.estado === 'VOLTANDO' ? '<b>O motorista está voltando para a sua loja!</b>' : 'O motorista volta para a sua loja no fim da rota.';
+      if (rota.estado !== 'VOLTANDO') classe += ' feito';
     } else {
-      const proxima = (rota.estado === 'A_CAMINHO' && rota.indice + 1 === idx) || (rota.estado === 'NA_PARADA' && rota.indice + 1 === idx);
+      const proxima = (rota.estado === 'A_CAMINHO' || rota.estado === 'NA_PARADA') && rota.indice + 1 === i;
       texto = '<b>' + (proxima ? 'O motorista está vindo para a sua loja!' : 'O motorista passa na sua loja hoje!') + '</b> Deixe as transferências prontas.' +
         (aguardandoColeta ? '<br><small>' + aguardandoColeta + ' arquivo(s) separado(s) esperando por ele.</small>' : '');
     }
@@ -730,7 +740,7 @@
       case 'AGUARDANDO': return 'Aguardando a saída da ' + nome(0);
       case 'NA_PARADA': return 'Na ' + nome(rota.indice) + ' desde ' + horaCurta(rota.ultima_hora);
       case 'A_CAMINHO': return 'A caminho da ' + nome(rota.indice + 1);
-      case 'RETORNANDO': return 'Voltando para a ' + nome(0);
+      case 'VOLTANDO': return 'Voltando para a ' + nome(p.length - 1);
       case 'CONCLUIDA': return 'Rota concluída às ' + horaCurta(rota.ultima_hora);
       default: return '';
     }
@@ -741,10 +751,9 @@
     const n = rota.paradas.length;
     if (n < 2) return 0;
     const passo = 100 / (n - 1);
-    if (rota.estado === 'AGUARDANDO' || rota.estado === 'CONCLUIDA') return 0;
-    if (rota.estado === 'A_CAMINHO') return Math.min(100, (rota.indice + 0.5) * passo);
-    if (rota.estado === 'RETORNANDO') return 100;
-    return rota.indice * passo;
+    if (rota.estado === 'AGUARDANDO') return 0;
+    if (rota.estado === 'A_CAMINHO' || rota.estado === 'VOLTANDO') return Math.min(100, (rota.indice + 0.5) * passo);
+    return Math.max(0, rota.indice) * passo;
   }
 
   /**
@@ -765,32 +774,40 @@
       if (rota.estado === 'NA_PARADA' && rota.indice === i) classes.push('atual');
       if (opcoes.destaque && p.loja_id === opcoes.destaque) classes.push('minha');
       if (l && l.tipo === 'CD') classes.push('cd');
-      const marca = i === 0 ? 'Saída' : (i === n - 1 ? 'Final' : '');
+      const marca = i === 0 ? 'Saída' : (p.chegada ? 'Chegada' : (i === n - 1 ? 'Final' : ''));
+      if (p.chegada) classes.push('chegada');
       return '<div class="' + classes.join(' ') + '" style="left:' + (n > 1 ? i * 100 / (n - 1) : 0) + '%">' +
         '<span class="ponto"></span>' +
         '<span class="parada-nome">' + (marca ? '<em>' + marca + '</em>' : '') + esc(nome.linha1) + (nome.linha2 ? '<small>' + esc(nome.linha2) + '</small>' : '') + '</span>' +
         (p.passou_em ? '<span class="parada-hora">✓ ' + horaCurta(p.passou_em) + '</span>' : '') +
       '</div>';
     }).join('');
-    const classeVeiculo = 'rota-veiculo' + (rota.estado === 'RETORNANDO' ? ' voltando' : '') + (rota.estado === 'A_CAMINHO' ? ' andando' : '') +
+    const classeVeiculo = 'rota-veiculo' + (rota.estado === 'VOLTANDO' ? ' andando voltando' : '') + (rota.estado === 'A_CAMINHO' ? ' andando' : '') +
       (rota.estado === 'CONCLUIDA' ? ' chegou' : '');
+    // Último trecho da volta (pontilhado, com o texto "volta")
+    const trechoVolta = rota.volta && n > 1 ? '<div class="rota-trecho-volta" style="left:' + ((n - 2) * 100 / (n - 1)) + '%"><span>volta</span></div>' : '';
     let botoes = '';
     if (opcoes.podeMarcar && ehHoje && rota.estado !== 'CONCLUIDA') {
       const prox = rota.estado === 'AGUARDANDO' ? 0 : rota.indice + 1;
-      if (rota.estado === 'RETORNANDO') {
-        botoes = '<button type="button" class="botao secundario pequeno" data-marcar="PARADA" data-loja="' + esc(rota.paradas[0].loja_id) + '">' + ICONES.certo + 'Cheguei de volta na ' + esc(nomeParada(rota.paradas[0].loja_id).linha1) + '</button>';
-      } else if (prox <= n - 1) {
-        botoes = '<button type="button" class="botao secundario pequeno" data-marcar="PARADA" data-loja="' + esc(rota.paradas[prox].loja_id) + '">' + ICONES.certo + (prox === 0 ? 'Saindo da ' : 'Cheguei na ') + esc(nomeParada(rota.paradas[prox].loja_id).linha1) + '</button>';
+      const botaoParada = function (i, texto) {
+        return '<button type="button" class="botao secundario pequeno" data-marcar="PARADA" data-loja="' + esc(rota.paradas[i].loja_id) + '">' + ICONES.certo + texto + esc(nomeParada(rota.paradas[i].loja_id).linha1) + '</button>';
+      };
+      if (prox > n - 1) {
+        botoes = '<button type="button" class="botao secundario pequeno" data-marcar="RETORNO">' + ICONES.certo + 'Encerrar rota</button>';
+      } else if (rota.paradas[prox].chegada) {
+        botoes = (rota.estado === 'VOLTANDO' ? '' : '<button type="button" class="botao secundario pequeno" data-marcar="RETORNO">' + ICONES.rota + 'Iniciar volta</button> ') +
+          botaoParada(prox, 'Cheguei de volta na ');
       } else {
-        botoes = '<button type="button" class="botao secundario pequeno" data-marcar="RETORNO">' + ICONES.rota + 'Iniciar retorno</button>';
+        botoes = botaoParada(prox, prox === 0 ? 'Saindo da ' : 'Cheguei na ');
       }
       botoes = '<div class="rota-botoes">' + botoes + '<span class="descricao pequena">Use quando não houver arquivo para registrar na parada.</span></div>';
     }
     return '<section class="rota-card" data-rota-data="' + esc(rota.data) + '" data-pos="' + pos + '">' +
       '<div class="rota-topo"><span class="rota-titulo">' + ICONES.rota + esc(titulo) + '</span>' +
         '<span class="rota-estado e-' + rota.estado.toLowerCase() + '">' + esc(textoEstadoRota(rota)) + '</span></div>' +
-      '<div class="rota-rolagem"><div class="rota-trilha" style="min-width:' + Math.max(240, n * 60) + 'px">' +
-        '<div class="rota-linha"></div><div class="rota-linha-feita" style="width:' + (rota.estado === 'RETORNANDO' || rota.estado === 'CONCLUIDA' ? 100 : pos) + '%"></div>' +
+      '<div class="rota-rolagem"><div class="rota-trilha" style="min-width:' + Math.max(200, n * 46) + 'px">' +
+        '<div class="rota-linha' + (rota.volta ? ' com-volta' : '') + '" style="' + (rota.volta && n > 1 ? 'right:' + (100 / (n - 1)) + '%' : '') + '"></div>' + trechoVolta +
+        '<div class="rota-linha-feita" style="width:' + pos + '%"></div>' +
         paradas +
         '<div class="' + classeVeiculo + '" style="left:' + pos + '%">' + ICONES.caminhao + '</div>' +
       '</div></div>' +
@@ -808,7 +825,7 @@
       const veiculo = card.querySelector('.rota-veiculo');
       let antiga = null;
       try { antiga = localStorage.getItem(chave); } catch (e) { /* ignora */ }
-      if (veiculo && antiga !== null && Number(antiga) !== nova && !veiculo.classList.contains('voltando')) {
+      if (veiculo && antiga !== null && Number(antiga) !== nova && Number(antiga) <= nova) {
         veiculo.style.transition = 'none';
         veiculo.style.left = antiga + '%';
         requestAnimationFrame(function () {
@@ -881,7 +898,7 @@
       ativarRota(visao, function () { carregar(); });
       el.querySelector('.rota-proximas').innerHTML = proximas.length ? blocoHtml('Próximas rotas (' + proximas.length + ')', '<div class="lista-rotas">' + proximas.map(function (p) {
         return '<a href="#/rota?data=' + esc(p.data) + '" class="item-rota-dia' + (p.data === dia ? ' atual' : '') + '"><b>' + esc(data(p.data)) + '</b>' +
-          '<span>' + p.paradas.map(function (id) { return esc(nomeParada(id).linha1); }).join(' → ') + '</span>' +
+          '<span>' + p.paradas.map(function (id) { return esc(nomeParada(id).linha1); }).join(' → ') + (p.volta !== false && p.paradas.length ? ' → volta à ' + esc(nomeParada(p.paradas[0]).linha1) : '') + '</span>' +
           (p.motorista_nome ? '<small>' + esc(p.motorista_nome) + '</small>' : '') + '</a>';
       }).join('') + '</div>') : '';
       ativarBlocos(el.querySelector('.rota-proximas'));
@@ -889,7 +906,8 @@
     };
 
     const desenharEditor = function (r, proximas) {
-      let paradas = r.rota ? r.rota.paradas.map(function (p) { return p.loja_id; }) : [];
+      let paradas = r.rota ? r.rota.paradas.filter(function (p) { return !p.chegada; }).map(function (p) { return p.loja_id; }) : [];
+      let volta = r.rota ? r.rota.volta !== false : true;
       let motoristaId = r.rota ? r.rota.motorista_id : '';
       let observacao = r.rota ? r.rota.observacao : '';
       const opcoesLoja = function (sel) {
@@ -901,13 +919,16 @@
         editor.innerHTML = '<form class="cartao form-rota" novalidate>' +
           '<h3 style="margin-top:0">' + (r.rota ? 'Editar' : 'Montar') + ' a rota de ' + esc(data(dia)) + '</h3><div class="msg"></div>' +
           '<ol class="lista-paradas">' + paradas.map(function (id, i) {
-            return '<li><span class="ordem">' + (i === 0 ? 'Saída' : i === paradas.length - 1 ? 'Final' : (i + 1) + 'ª') + '</span>' +
+            return '<li><span class="ordem">' + (i === 0 ? 'Saída' : i === paradas.length - 1 && !volta ? 'Final' : (i + 1) + 'ª') + '</span>' +
               '<select data-parada="' + i + '">' + opcoesLoja(id) + '</select>' +
               '<button type="button" class="botao-icone" data-subir="' + i + '" title="Subir"' + (i === 0 ? ' disabled' : '') + '>▲</button>' +
               '<button type="button" class="botao-icone" data-descer="' + i + '" title="Descer"' + (i === paradas.length - 1 ? ' disabled' : '') + '>▼</button>' +
               '<button type="button" class="botao-icone" data-tirar="' + i + '" title="Remover">✕</button></li>';
           }).join('') + '</ol>' +
           '<div class="barra-acoes"><select class="nova-parada"><option value="">+ Adicionar parada...</option>' + opcoesLoja('') + '</select></div>' +
+          '<div class="campo"><label class="check"><input type="checkbox" name="volta"' + (volta ? ' checked' : '') + '> Voltar para a saída no fim' +
+            (paradas.length ? ' (' + esc(nomeParada(paradas[0]).linha1) + ')' : '') + '</label>' +
+            '<div class="ajuda">O sistema coloca a saída de novo como chegada, no fim da linha. Desmarque se o motorista terminar o dia em outro lugar.</div></div>' +
           '<div class="linha-campos">' +
             '<div class="campo"><label>Motorista <span class="opcional">(opcional)</span></label><select name="motorista"><option value="">—</option>' +
               (r.motoristas || []).map(function (m) { return '<option value="' + esc(m.id) + '"' + (motoristaId === m.id ? ' selected' : '') + '>' + esc(m.nome) + '</option>'; }).join('') + '</select></div>' +
@@ -920,6 +941,7 @@
         '</form>';
         const form = editor.querySelector('form');
         form.motorista.onchange = function () { motoristaId = form.motorista.value; };
+        form.volta.onchange = function () { volta = form.volta.checked; desenhar(); };
         form.observacao.oninput = function () { observacao = form.observacao.value; };
         form.querySelectorAll('[data-parada]').forEach(function (s) { s.onchange = function () { paradas[Number(s.dataset.parada)] = s.value; desenhar(); }; });
         form.querySelectorAll('[data-subir]').forEach(function (b) { b.onclick = function () { const i = Number(b.dataset.subir); paradas.splice(i - 1, 0, paradas.splice(i, 1)[0]); desenhar(); }; });
@@ -929,12 +951,12 @@
         const copiar = form.querySelector('.copiar');
         if (copiar) copiar.onchange = function (e) {
           const outras = proximas.filter(function (p) { return p.data !== dia; });
-          if (e.target.value !== '') { paradas = outras[Number(e.target.value)].paradas.slice(); desenhar(); }
+          if (e.target.value !== '') { const o = outras[Number(e.target.value)]; paradas = o.paradas.slice(); volta = o.volta !== false; desenhar(); }
         };
         const salvar = async function (lista) {
           const msg = form.querySelector('.msg');
           try {
-            await chamar('salvarRota', { data: dia, paradas: lista, motorista_id: form.motorista.value, observacao: form.observacao.value });
+            await chamar('salvarRota', { data: dia, paradas: lista, motorista_id: form.motorista.value, observacao: form.observacao.value, volta: volta });
             toast(lista.length ? 'Rota salva.' : 'Rota apagada.');
             Estado.resumo = null;
             carregar();
