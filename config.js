@@ -5,5 +5,5 @@
  * (Implantar > Nova implantação > App da Web). Ela termina com "/exec".
  */
 const RASTREIA_CONFIG = {
-  API_URL: 'https://script.google.com/macros/s/AKfycbznNsrJS7nYbk_2_No2rNSFtUBQrTVW9TLFVbeVSIGq59rk33RHZApyTTYwrXIIjTvLaw/exec'
+  API_URL: 'https://script.google.com/macros/s/AKfycbxNOnpjpJaT96ToiF_-nOCECSksLmt3npbdKbjE2tfy1lhg9AvFSVyVunwsCkQDxGgmNA/exec'
 };
