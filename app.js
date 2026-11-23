@@ -936,12 +936,6 @@
       const marca = function (l) {
         return m.ativo ? '<input type="checkbox" class="marca-loja" data-loja-rota="' + esc(l.loja_id) + '"' + (m.marcadas[l.loja_id] ? ' checked' : '') + ' aria-label="Incluir na rota">' : '';
       };
-      const parada = function (l) {
-        const p = naRota[l.loja_id];
-        if (m.ativo) return '';
-        if (p) return '<span class="ordem-parada' + (p.passou ? ' passou' : '') + '" title="' + (p.passou ? 'Motorista já passou' : p.ordem + 'ª parada da rota de hoje') + '">' + (p.passou ? ICONES.certo : p.ordem + 'ª') + '</span>';
-        return '<span class="ordem-parada fora" title="Fora da rota de hoje">–</span>';
-      };
       const foraDaRota = function (l) { return !m.ativo && r.rota && temMovimento(l) && !naRota[l.loja_id]; };
       const num = function (n, tipo) { return '<span class="qtd ' + tipo + (n ? ' tem' : '') + '">' + n + '</span>'; };
 
@@ -953,19 +947,43 @@
           (l.atrasados ? '<span class="texto-atraso">' + l.atrasados + ' atrasado' + (l.atrasados > 1 ? 's' : '') + '</span>' : '') + '</div>';
       }).join('');
 
-      const visiveis = m.ativo ? comuns : comuns.filter(temMovimento);
-      const semMov = m.ativo ? [] : comuns.filter(function (l) { return !temMovimento(l); });
-      const linha = function (l) {
+      // Com rota no dia: dois grupos — "Na rota de hoje" (na ordem da rota) e "Fora da rota" (com movimento).
+      const agrupar = !m.ativo && !!r.rota;
+      const daRota = agrupar ? comuns.filter(function (l) { return naRota[l.loja_id]; })
+        .sort(function (a, b) { return naRota[a.loja_id].ordem - naRota[b.loja_id].ordem; }) : [];
+      const fora = agrupar ? comuns.filter(function (l) { return !naRota[l.loja_id] && temMovimento(l); }) : [];
+      const visiveis = m.ativo ? comuns : agrupar ? [] : comuns.filter(temMovimento);
+      const semMov = m.ativo ? [] : comuns.filter(function (l) { return !temMovimento(l) && !(agrupar && naRota[l.loja_id]); });
+      const linha = function (l, grupo) {
         const loja = lojaPorId(l.loja_id);
+        const passou = grupo === 'rota' && naRota[l.loja_id].passou;
+        const avisoFora = !grupo && foraDaRota(l);
         return '<div class="linha-loja' + (temMovimento(l) ? '' : ' sem-movimento') + '" data-linha-loja="' + esc(l.loja_id) + '">' +
-          '<span class="col-ini">' + marca(l) + parada(l) + '</span>' +
-          '<span class="col-nome"><span class="nome-loja">' + esc(nomeLojaCurto(l.loja_id)) + '</span>' + (loja.cidade ? '<small class="cidade-loja">' + esc(loja.cidade) + '</small>' : '') +
-            (foraDaRota(l) || l.atrasados ? '<span class="sub-loja">' +
-              (foraDaRota(l) ? '<span class="selo-fora">fora da rota</span>' : '') +
+          '<span class="col-ini">' + marca(l) + '</span>' +
+          '<span class="col-nome"><span class="nome-loja">' + esc(nomeLojaCurto(l.loja_id)) +
+            (passou ? '<span class="loja-passou" title="O motorista já passou aqui">' + ICONES.certo + '</span>' : '') + '</span>' +
+            (loja.cidade ? '<small class="cidade-loja">' + esc(loja.cidade) + '</small>' : '') +
+            (avisoFora || l.atrasados ? '<span class="sub-loja">' +
+              (avisoFora ? '<span class="selo-fora">fora da rota</span>' : '') +
               (l.atrasados ? '<span class="texto-atraso">' + l.atrasados + ' atrasado' + (l.atrasados > 1 ? 's' : '') + '</span>' : '') + '</span>' : '') +
           '</span>' +
           '<span class="col-num">' + num(l.retirar, 'coletar') + '</span><span class="col-num">' + num(l.entregar, 'entregar') + '</span></div>';
       };
+      let grupos = '';
+      if (agrupar) {
+        grupos += '<div class="grupo-lojas na-rota"><div class="grupo-titulo">' + ICONES.caminhao + 'Na rota de hoje · ' + daRota.length + ' loja' + (daRota.length === 1 ? '' : 's') + '</div>' +
+          '<div class="grupo-linhas">' + (daRota.length ? daRota.map(function (l) { return linha(l, 'rota'); }).join('') : '<p class="descricao pequena vazio-lojas">Só o CD está na rota.</p>') + '</div></div>';
+        if (fora.length) {
+          // A rota atual (sem a chegada) com as lojas de fora no fim, para abrir o editor já pronto
+          const atual = r.rota.paradas.filter(function (p) { return !p.chegada; }).map(function (p) { return p.loja_id; });
+          const cdsFora = cds.filter(foraDaRota).map(function (l) { return l.loja_id; });
+          const novas = atual.concat(fora.map(function (l) { return l.loja_id; })).concat(cdsFora);
+          grupos += '<div class="grupo-lojas fora"><div class="grupo-titulo">' + ICONES.alerta + 'Fora da rota · ' + fora.length + ' loja' + (fora.length === 1 ? '' : 's') + ' com movimento</div>' +
+            '<div class="grupo-linhas">' + fora.map(function (l) { return linha(l, 'fora'); }).join('') +
+            (podeMontar ? '<a class="botao secundario pequeno largo incluir-rota" href="#/rota?lojas=' + novas.map(encodeURIComponent).join(',') + '">' + ICONES.mais + 'Incluir na rota de hoje</a>' : '') +
+            '</div></div>';
+        }
+      }
       const qtdMarcadas = Object.keys(m.marcadas).length;
       let rodape = '';
       if (podeMontar && m.ativo) {
@@ -982,8 +1000,9 @@
         '<div class="tabela-lojas">' +
           '<div class="linha-loja cabecalho"><span class="col-ini"></span><span class="col-nome">Loja</span>' +
             '<span class="col-num coletar">↑ Coletar</span><span class="col-num entregar">↓ Entregar</span></div>' +
-          visiveis.map(linha).join('') +
-          (!visiveis.length ? '<p class="descricao pequena vazio-lojas">Nenhuma loja com arquivo para coletar ou entregar agora.</p>' : '') +
+          grupos +
+          visiveis.map(function (l) { return linha(l); }).join('') +
+          (!visiveis.length && !agrupar ? '<p class="descricao pequena vazio-lojas">Nenhuma loja com arquivo para coletar ou entregar agora.</p>' : '') +
           (semMov.length ? '<div class="linha-loja sem-mov-resumo"><span class="col-ini"></span><span class="col-nome">Sem movimento: ' +
             semMov.map(function (l) { const n = lojaPorId(l.loja_id).numero; return esc(n ? String(n).padStart(2, '0') : nomeLojaCurto(l.loja_id)); }).join(', ') + '</span></div>' : '') +
           '<div class="linha-loja total"><span class="col-ini"></span><span class="col-nome">Total</span><span class="col-num">' + num(total.retirar, 'coletar') + '</span><span class="col-num">' + num(total.entregar, 'entregar') + '</span></div>' +

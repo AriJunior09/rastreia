@@ -633,6 +633,7 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .linha-loja.cabecalho .coletar { color: var(--c-laranja); }
 .linha-loja.cabecalho .entregar { color: var(--c-azul); }
 .linha-loja .col-ini { width: 30px; flex: none; display: flex; justify-content: center; }
+.tabela-lojas-caixa:not(.montando) .col-ini { display: none; } /* a coluna só existe para as caixinhas do modo montar rota */
 .linha-loja .col-nome { flex: 1; min-width: 0; }
 .linha-loja .col-num { width: 74px; flex: none; text-align: center; }
 .linha-loja .nome-loja { font-weight: 700; display: block; }
@@ -656,6 +657,21 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .tabela-lojas .qtd.tem.entregar { background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); }
 .linha-loja.total .qtd { background: none !important; }
 .vazio-lojas { padding: 10px 0; margin: 0; }
+/* v2.5.3 — grupos "Na rota de hoje" e "Fora da rota" */
+.grupo-lojas { margin-top: 10px; }
+.grupo-titulo { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+.grupo-titulo svg { width: 16px; height: 16px; flex: none; }
+.grupo-linhas { margin: 2px 0 0; padding-left: 10px; border-left: 3px solid; }
+.grupo-linhas > .linha-loja:first-child { border-top: 0; }
+.grupo-lojas.na-rota .grupo-titulo { background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); }
+.grupo-lojas.na-rota .grupo-linhas { border-left-color: var(--cor-primaria); }
+.grupo-lojas.fora .grupo-titulo { background: #fee2e2; color: #b91c1c; }
+.grupo-lojas.fora .grupo-linhas { border-left-color: #ef4444; }
+.loja-passou { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--cor-ok); }
+.loja-passou svg { width: 16px; height: 16px; }
+.incluir-rota { margin: 4px 0 8px; justify-content: center; text-decoration: none; }
+.incluir-rota svg { width: 16px; height: 16px; }
+.sem-mov-resumo { margin-top: 6px; }
 .marca-loja { width: 20px; height: 20px; margin: 0; }
 .montando .linha-loja[data-linha-loja], .montando .faixa-cd { cursor: pointer; }
 .botao.largo { width: 100%; justify-content: center; margin-top: 12px; }
