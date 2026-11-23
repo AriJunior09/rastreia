@@ -642,3 +642,35 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 }
 .rota-parada.chegada .ponto { border-style: dashed; }
 .rota-parada.chegada.passou .ponto { background: var(--cor-ok); border-color: var(--cor-ok); border-style: solid; }
+
+/* ---------- Tela do adm/CEO: card do CD e tabela das lojas ---------- */
+.card-mini.c-cd { background: linear-gradient(135deg, #713f12, #a16207); }
+.card-mini.c-laranja { background: linear-gradient(135deg, #c2410c, #fb923c); }
+.tabela-lojas-caixa { padding: 14px; }
+.tabela-lojas-topo h3 { margin: 0 0 2px; font-size: 17px; }
+.tabela-lojas-topo .descricao { margin: 0 0 10px; }
+.tabela-lojas { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabela-lojas th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--texto-suave); padding: 6px 8px; border-bottom: 2px solid var(--borda); }
+.tabela-lojas td { padding: 8px; border-bottom: 1px solid var(--borda); vertical-align: middle; }
+.tabela-lojas .num { text-align: center; width: 78px; }
+.tabela-lojas .col-marca { width: 30px; padding-right: 0; }
+.tabela-lojas .col-marca input { width: 18px; height: 18px; }
+.tabela-lojas .nome-loja { font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.tabela-lojas .nome-loja svg { width: 16px; height: 16px; color: var(--cor-cd); }
+.tabela-lojas small { color: var(--texto-suave); margin-left: 6px; }
+.tabela-lojas .selo { margin-left: 6px; font-size: 11px; padding: 1px 7px; }
+.tabela-lojas .selo svg { width: 12px; height: 12px; }
+.tabela-lojas .selo.na-rota { background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); }
+.tabela-lojas tr.sem-movimento td { color: var(--texto-suave); }
+.tabela-lojas tr.sem-movimento .nome-loja { font-weight: 500; }
+.tabela-lojas tr.linha-cd td { background: #fffbeb; }
+.tabela-lojas .qtd { display: inline-block; min-width: 32px; padding: 3px 8px; border-radius: 999px; font-weight: 800; color: var(--texto-suave); }
+.tabela-lojas .qtd.tem.retirar { background: #ffedd5; color: #c2410c; }
+.tabela-lojas .qtd.tem.entregar { background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); }
+.tabela-lojas tfoot td { font-weight: 800; border-bottom: 0; border-top: 2px solid var(--borda); }
+.acoes-tabela { margin: 12px 0 0; }
+@media (max-width: 520px) {
+  .tabela-lojas small { display: block; margin-left: 0; }
+  .tabela-lojas .selo { margin: 3px 4px 0 0; }
+  .tabela-lojas .num { width: 64px; }
+}

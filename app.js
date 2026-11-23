@@ -691,32 +691,89 @@
   }
 
   function desenharInicioGeral(corpo, r) {
-    const lojasColeta = Object.keys(r.coleta_por_loja || {}).sort().map(function (id) {
-      return '<span class="selo loja">' + esc(nomeLojaCurto(id)) + ': ' + r.coleta_por_loja[id] + '</span>';
-    }).join('');
-    let html =
-      (r.rota ? rotaHtml(r.rota, { podeMarcar: ['MOTORISTA', 'ADM', 'CEO'].indexOf(Estado.usuario.perfil) >= 0 }) :
-        (Estado.usuario.perfil === 'ADM' || Estado.usuario.perfil === 'CEO' ? '<a class="rota-vazia" href="#/rota">' + ICONES.rota + 'Nenhuma rota para hoje. Toque para montar a rota do motorista.</a>' : '')) +
-      '<div class="destaque">' +
-        '<div class="destaque-rotulo">Arquivos em aberto</div>' +
-        '<div class="destaque-numero">' + r.em_aberto + '</div>' +
-        '<div class="destaque-rodape">' + ICONES.certo + r.entregues_hoje + ' entregue' + (r.entregues_hoje === 1 ? '' : 's') + ' hoje</div>' +
-      '</div>' +
-      '<div class="grade tres">' +
-        numeroHtml(r.aguardando_coleta, 'Aguardando coleta nas lojas', r.aguardando_coleta ? 'realce' : '', 'caixa') +
-        numeroHtml(r.com_motorista, 'Com motorista', '', 'caminhao') +
-        numeroHtml(r.no_cd, 'No CD', 'cd', 'armazem') +
-      '</div>';
-    if (lojasColeta) html += blocoHtml('Onde tem mercadoria para coletar', '<div class="lista-chips">' + lojasColeta + '</div>');
-    if (r.atencao.length) html += blocoHtml('Precisam de atenção (' + r.atencao.length + ')', listaArquivosHtml(r.atencao, 'ambos'), '<span class="selo erro">' + ICONES.alerta + 'Atenção</span>');
-    html += blocoHtml('No CD (' + r.no_cd + ')', listaArquivosHtml(r.lista_cd, 'ambos', 'Nada parado no CD.'));
-    html += blocoHtml('Com motorista (' + r.com_motorista + ')', listaArquivosHtml(r.lista_motorista, 'ambos', 'Nenhum arquivo em trânsito.'));
-    corpo.innerHTML = html;
-    const primeiroBloco = corpo.querySelector('details.bloco');
-    if (primeiroBloco) primeiroBloco.insertAdjacentHTML('beforebegin', botoesBlocosHtml());
-    ativarBlocos(corpo);
-    ativarBotoesBlocos(corpo);
-    ativarRota(corpo, function (nova) { r.rota = nova; desenharInicioGeral(corpo, r); });
+    const u = Estado.usuario;
+    const podeMontar = u.perfil === 'ADM' || u.perfil === 'CEO';
+    let escolhido = 'coleta';
+    try { escolhido = localStorage.getItem('rastreia_card_geral') || 'coleta'; } catch (e) { /* ignora */ }
+    const listas = {
+      coleta: { titulo: 'Aguardando coleta', itens: r.lista_coleta || [], vazio: 'Nenhum arquivo esperando o motorista nas lojas.' },
+      vendedores: { titulo: 'Encomendas de vendedores', itens: r.lista_vendedores || [], vazio: 'Nenhuma encomenda de vendedor em aberto.', dica: 'Arquivos pedidos por vendedores que ainda não foram entregues.' },
+      cd: { titulo: 'No CD', itens: r.lista_cd || [], vazio: 'Nada parado no CD.' },
+      motorista: { titulo: 'Com motorista', itens: r.lista_motorista || [], vazio: 'Nenhum arquivo em trânsito.' }
+    };
+    if (!listas[escolhido]) escolhido = 'coleta';
+    const naRota = {};
+    if (r.rota) r.rota.paradas.forEach(function (p) { naRota[p.loja_id] = true; });
+    const lojas = (r.lojas || []).filter(function (l) { return lojaPorId(l.loja_id); });
+    const marcadas = {};
+    lojas.forEach(function (l) { if (l.retirar || l.entregar) marcadas[l.loja_id] = true; });
+
+    const tabelaHtml = function () {
+      const total = lojas.reduce(function (a, l) { return { retirar: a.retirar + l.retirar, entregar: a.entregar + l.entregar }; }, { retirar: 0, entregar: 0 });
+      return '<section class="cartao tabela-lojas-caixa">' +
+        '<div class="tabela-lojas-topo"><h3>Movimento por loja</h3>' +
+          '<p class="descricao pequena"><b>Retirar</b>: arquivos separados na loja esperando o motorista. <b>Entregar</b>: arquivos que ainda precisam chegar nessa loja.</p></div>' +
+        '<table class="tabela-lojas"><thead><tr>' + (podeMontar ? '<th class="col-marca"></th>' : '') +
+          '<th>Loja</th><th class="num">Retirar</th><th class="num">Entregar</th></tr></thead><tbody>' +
+        lojas.map(function (l) {
+          const loja = lojaPorId(l.loja_id);
+          const nome = loja.tipo === 'CD' ? loja.nome : nomeLojaCurto(l.loja_id);
+          const vazio = !l.retirar && !l.entregar;
+          return '<tr class="' + (vazio ? 'sem-movimento' : '') + (loja.tipo === 'CD' ? ' linha-cd' : '') + '">' +
+            (podeMontar ? '<td class="col-marca"><input type="checkbox" data-loja-rota="' + esc(l.loja_id) + '"' + (marcadas[l.loja_id] ? ' checked' : '') + ' aria-label="Incluir na rota"></td>' : '') +
+            '<td><span class="nome-loja">' + (loja.tipo === 'CD' ? ICONES.armazem : '') + esc(nome) + '</span>' +
+              (loja.cidade ? '<small>' + esc(loja.cidade) + '</small>' : '') +
+              (naRota[l.loja_id] ? '<span class="selo na-rota">' + ICONES.caminhao + 'na rota hoje</span>' : '') +
+              (l.atrasados ? '<span class="selo aviso">' + l.atrasados + ' atrasado(s)</span>' : '') + '</td>' +
+            '<td class="num"><span class="qtd' + (l.retirar ? ' tem retirar' : '') + '">' + l.retirar + '</span></td>' +
+            '<td class="num"><span class="qtd' + (l.entregar ? ' tem entregar' : '') + '">' + (loja.tipo === 'CD' ? '—' : l.entregar) + '</span></td></tr>';
+        }).join('') +
+        '</tbody><tfoot><tr>' + (podeMontar ? '<td></td>' : '') + '<td>Total</td><td class="num">' + total.retirar + '</td><td class="num">' + total.entregar + '</td></tr></tfoot></table>' +
+        (podeMontar ? '<div class="barra-acoes acoes-tabela"><span class="descricao pequena">Marque as lojas e monte a rota a partir delas.</span><span class="espaco"></span>' +
+          '<button type="button" class="botao" data-montar-rota>' + ICONES.rota + (r.rota ? 'Refazer a rota de hoje' : 'Montar rota de hoje') + '</button></div>' : '') +
+      '</section>';
+    };
+
+    const desenhar = function () {
+      const l = listas[escolhido];
+      corpo.innerHTML =
+        (r.rota ? rotaHtml(r.rota, { podeMarcar: ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0 }) :
+          (podeMontar ? '<a class="rota-vazia" href="#/rota">' + ICONES.rota + 'Nenhuma rota para hoje. Toque para montar a rota do motorista.</a>' : '')) +
+        '<div class="cards-mini">' +
+          cardMiniHtml('coleta', 'Aguardando coleta', r.aguardando_coleta, 'separados nas lojas', 'caixa', 'c-laranja', escolhido === 'coleta') +
+          cardMiniHtml('vendedores', 'Encomendas de vendedores', r.vendedores_total || 0, 'ainda não entregues', 'pessoa', 'c-roxo', escolhido === 'vendedores') +
+          cardMiniHtml('cd', 'No CD', r.no_cd, 'esperando seguir viagem', 'armazem', 'c-cd', escolhido === 'cd') +
+          cardMiniHtml('motorista', 'Com motorista', r.com_motorista, r.entregues_hoje + ' entregue(s) hoje', 'caminhao', 'c-azul', escolhido === 'motorista') +
+        '</div>' +
+        tabelaHtml() +
+        (r.atencao.length ? blocoHtml('Precisam de atenção (' + r.atencao.length + ')',
+          '<p class="descricao pequena">Atrasados (mais de ' + r.dias_alerta_pendente + ' dias parados, ou ' + r.dias_alerta_cd + ' no CD), com volume faltando ou com ocorrência.</p>' +
+          listaArquivosHtml(r.atencao, 'ambos'), '<span class="selo erro">' + ICONES.alerta + 'Atenção</span>') : '') +
+        '<section class="lista-card"><h3>' + esc(l.titulo) + ' (' + l.itens.length + ')</h3>' +
+          (l.dica ? '<p class="descricao pequena">' + esc(l.dica) + '</p>' : '') +
+          listaArquivosHtml(l.itens, 'ambos', l.vazio) + '</section>';
+      ativarBlocos(corpo);
+      ativarRota(corpo, function (nova) { r.rota = nova; desenhar(); });
+      corpo.querySelectorAll('[data-card]').forEach(function (b) {
+        b.onclick = function () {
+          escolhido = b.dataset.card;
+          try { localStorage.setItem('rastreia_card_geral', escolhido); } catch (e) { /* ignora */ }
+          desenhar();
+          const lista = corpo.querySelector('.lista-card');
+          if (lista && window.innerWidth < 800) lista.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+      });
+      corpo.querySelectorAll('[data-loja-rota]').forEach(function (c) {
+        c.onchange = function () { if (c.checked) marcadas[c.dataset.lojaRota] = true; else delete marcadas[c.dataset.lojaRota]; };
+      });
+      const montar = corpo.querySelector('[data-montar-rota]');
+      if (montar) montar.onclick = function () {
+        const ids = lojas.map(function (l) { return l.loja_id; }).filter(function (id) { return marcadas[id]; });
+        if (ids.length < 2) { toast('Marque pelo menos 2 lojas para montar a rota.', true); return; }
+        location.hash = '#/rota?lojas=' + ids.join(',');
+      };
+    };
+    desenhar();
   }
 
   /* =========================================================
@@ -884,6 +941,7 @@
 
     const visao = el.querySelector('.rota-visao');
     const editor = el.querySelector('.rota-editor');
+    let editorJaUsouSugestao = false;
 
     const carregar = async function () {
       let r, proximas;
@@ -907,6 +965,9 @@
 
     const desenharEditor = function (r, proximas) {
       let paradas = r.rota ? r.rota.paradas.filter(function (p) { return !p.chegada; }).map(function (p) { return p.loja_id; }) : [];
+      const sugeridas = (parametros.get('lojas') || '').split(',').filter(function (id) { return lojaPorId(id); });
+      const veioDaTabela = sugeridas.length >= 2 && !editorJaUsouSugestao;
+      if (veioDaTabela) { paradas = sugeridas; editorJaUsouSugestao = true; }
       let volta = r.rota ? r.rota.volta !== false : true;
       let motoristaId = r.rota ? r.rota.motorista_id : '';
       let observacao = r.rota ? r.rota.observacao : '';
@@ -917,7 +978,8 @@
       };
       const desenhar = function () {
         editor.innerHTML = '<form class="cartao form-rota" novalidate>' +
-          '<h3 style="margin-top:0">' + (r.rota ? 'Editar' : 'Montar') + ' a rota de ' + esc(data(dia)) + '</h3><div class="msg"></div>' +
+          '<h3 style="margin-top:0">' + (r.rota ? 'Editar' : 'Montar') + ' a rota de ' + esc(data(dia)) + '</h3><div class="msg">' +
+            (veioDaTabela ? '<div class="mensagem info">Lojas trazidas da tabela da tela inicial. Arrume a ordem com ▲ ▼ (a primeira é a saída) e clique em <b>Salvar rota</b>.</div>' : '') + '</div>' +
           '<ol class="lista-paradas">' + paradas.map(function (id, i) {
             return '<li><span class="ordem">' + (i === 0 ? 'Saída' : i === paradas.length - 1 && !volta ? 'Final' : (i + 1) + 'ª') + '</span>' +
               '<select data-parada="' + i + '">' + opcoesLoja(id) + '</select>' +
