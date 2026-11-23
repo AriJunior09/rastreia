@@ -768,6 +768,8 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .rota-compacta > summary .seta { width: 16px; height: 16px; color: var(--texto-suave); transition: transform .15s; }
 .rota-compacta[open] > summary .seta { transform: rotate(90deg); }
 .rota-compacta .rota-card { box-shadow: none; margin: 0; padding-top: 0; }
+.rota-compacta .rota-topo { display: none; } /* o resumo da linha já mostra o título e a situação */
+.rota-compacta .rota-rolagem { padding-top: 8px; }
 .rota-vazia span { flex: 1; }
 .rota-vazia b { color: var(--cor-primaria); }
 .rota-card .rota-aviso { margin: -2px -2px 12px; }

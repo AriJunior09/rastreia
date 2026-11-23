@@ -1280,7 +1280,9 @@
           (proximas.filter(function (p) { return p.data !== dia; }).length ? '<div class="campo"><label>Copiar de outra rota</label><select class="copiar"><option value="">—</option>' +
             proximas.filter(function (p) { return p.data !== dia; }).map(function (p, i) { return '<option value="' + i + '">' + esc(data(p.data)) + ': ' + p.paradas.map(function (id) { return esc(nomeParada(id).linha1); }).join(' → ') + '</option>'; }).join('') + '</select></div>' : '') +
           '<div class="barra-acoes"><button type="submit" class="botao">Salvar rota</button>' +
-            (r.rota ? '<button type="button" class="botao secundario" data-apagar>Apagar rota do dia</button>' : '') + '</div>' +
+            (r.rota ? '<button type="button" class="botao secundario" data-apagar>Apagar rota do dia</button>' : '') +
+            (r.rota && r.rota.indice >= 0 ? '<button type="button" class="botao secundario" data-recomecar>Zerar andamento</button>' : '') + '</div>' +
+          (r.rota && r.rota.indice >= 0 ? '<p class="descricao pequena">"Zerar andamento" apaga as passagens e o "concluída" desta rota; o motorista começa de novo. Os arquivos registrados não mudam.</p>' : '') +
         '</form>';
         const form = editor.querySelector('form');
         form.motorista.onchange = function () { motoristaId = form.motorista.value; };
@@ -1314,6 +1316,19 @@
         };
         const apagar = form.querySelector('[data-apagar]');
         if (apagar) apagar.onclick = function () { if (confirm('Apagar a rota de ' + data(dia) + '?')) salvar([]); };
+        const recomecar = form.querySelector('[data-recomecar]');
+        if (recomecar) recomecar.onclick = async function () {
+          if (!confirm('Zerar o andamento da rota de ' + data(dia) + '? O motorista vai começar a rota de novo.')) return;
+          try {
+            await chamar('recomecarRota', { data: dia });
+            try { localStorage.removeItem('rastreia_rota_pos_' + dia); } catch (e) { /* ignora */ }
+            toast('Andamento da rota zerado.');
+            Estado.resumo = null;
+            carregar();
+          } catch (erro) {
+            form.querySelector('.msg').innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+          }
+        };
       };
       desenhar();
     };
