@@ -471,6 +471,7 @@
     if (!ROTAS[rota]) rota = '#/inicio';
     if (rota.indexOf('#/config') === 0 && !ehAdm()) rota = '#/inicio';
     clearInterval(Estado.timerPagina);
+    Estado.montarRota = null;
     const conteudo = montarLayout(rota);
     ROTAS[rota](conteudo);
   }
@@ -917,35 +918,76 @@
         dica: r.entregues_hoje + ' entregue(s) hoje.' }
     ];
     let escolhido = lerCardEscolhido('rastreia_card_geral', r.aguardando_coleta ? 'coleta' : '');
+    // Posição de cada loja na rota de hoje (1ª, 2ª...) e se o motorista já passou
     const naRota = {};
-    if (r.rota) r.rota.paradas.forEach(function (p) { naRota[p.loja_id] = true; });
+    if (r.rota) r.rota.paradas.forEach(function (p, i) {
+      if (p.chegada || naRota[p.loja_id]) return;
+      naRota[p.loja_id] = { ordem: i + 1, passou: !!p.passou_em };
+    });
     const lojas = (r.lojas || []).filter(function (l) { return lojaPorId(l.loja_id); });
-    const marcadas = {};
-    lojas.forEach(function (l) { if (l.retirar || l.entregar) marcadas[l.loja_id] = true; });
+    const temMovimento = function (l) { return !!(l.retirar || l.entregar); };
+    // Modo "escolher lojas da rota": fica guardado para a atualização automática não desfazer
+    const m = Estado.montarRota || (Estado.montarRota = { ativo: false, marcadas: {} });
 
     const tabelaHtml = function () {
-      const total = lojas.reduce(function (a, l) { return { retirar: a.retirar + l.retirar, entregar: a.entregar + l.entregar }; }, { retirar: 0, entregar: 0 });
-      return '<section class="cartao tabela-lojas-caixa">' +
-        '<div class="tabela-lojas-topo"><h3>Movimento por loja</h3>' +
-          '<p class="descricao pequena"><b>Retirar</b>: separados na loja, esperando o motorista. <b>Entregar</b>: ainda precisam chegar na loja.</p></div>' +
-        '<table class="tabela-lojas"><thead><tr>' + (podeMontar ? '<th class="col-marca"></th>' : '') +
-          '<th>Loja</th><th class="num">Retirar</th><th class="num">Entregar</th></tr></thead><tbody>' +
-        lojas.map(function (l) {
-          const loja = lojaPorId(l.loja_id);
-          const nome = loja.tipo === 'CD' ? loja.nome : nomeLojaCurto(l.loja_id);
-          const vazio = !l.retirar && !l.entregar;
-          return '<tr class="' + (vazio ? 'sem-movimento' : '') + (loja.tipo === 'CD' ? ' linha-cd' : '') + '">' +
-            (podeMontar ? '<td class="col-marca"><input type="checkbox" data-loja-rota="' + esc(l.loja_id) + '"' + (marcadas[l.loja_id] ? ' checked' : '') + ' aria-label="Incluir na rota"></td>' : '') +
-            '<td><span class="nome-loja">' + (loja.tipo === 'CD' ? ICONES.armazem : '') + esc(nome) + '</span>' +
-              (loja.cidade ? '<small>' + esc(loja.cidade) + '</small>' : '') +
-              (naRota[l.loja_id] ? '<span class="selo na-rota">' + ICONES.caminhao + 'na rota hoje</span>' : '') +
-              (l.atrasados ? '<span class="selo aviso">' + l.atrasados + ' atrasado(s)</span>' : '') + '</td>' +
-            '<td class="num"><span class="qtd' + (l.retirar ? ' tem retirar' : '') + '">' + l.retirar + '</span></td>' +
-            '<td class="num"><span class="qtd' + (l.entregar ? ' tem entregar' : '') + '">' + (loja.tipo === 'CD' ? '—' : l.entregar) + '</span></td></tr>';
-        }).join('') +
-        '</tbody><tfoot><tr>' + (podeMontar ? '<td></td>' : '') + '<td>Total</td><td class="num">' + total.retirar + '</td><td class="num">' + total.entregar + '</td></tr></tfoot></table>' +
-        (podeMontar ? '<div class="barra-acoes acoes-tabela"><span class="descricao pequena">Marque as lojas e monte a rota a partir delas.</span><span class="espaco"></span>' +
-          '<button type="button" class="botao" data-montar-rota>' + ICONES.rota + (r.rota ? 'Refazer a rota de hoje' : 'Montar rota de hoje') + '</button></div>' : '') +
+      const cds = lojas.filter(function (l) { return lojaPorId(l.loja_id).tipo === 'CD'; });
+      const comuns = lojas.filter(function (l) { return lojaPorId(l.loja_id).tipo !== 'CD'; });
+      const total = comuns.reduce(function (a, l) { return { retirar: a.retirar + l.retirar, entregar: a.entregar + l.entregar }; }, { retirar: 0, entregar: 0 });
+      const marca = function (l) {
+        return m.ativo ? '<input type="checkbox" class="marca-loja" data-loja-rota="' + esc(l.loja_id) + '"' + (m.marcadas[l.loja_id] ? ' checked' : '') + ' aria-label="Incluir na rota">' : '';
+      };
+      const parada = function (l) {
+        const p = naRota[l.loja_id];
+        if (m.ativo) return '';
+        if (p) return '<span class="ordem-parada' + (p.passou ? ' passou' : '') + '" title="' + (p.passou ? 'Motorista já passou' : p.ordem + 'ª parada da rota de hoje') + '">' + (p.passou ? ICONES.certo : p.ordem + 'ª') + '</span>';
+        return '<span class="ordem-parada fora" title="Fora da rota de hoje">–</span>';
+      };
+      const foraDaRota = function (l) { return !m.ativo && r.rota && temMovimento(l) && !naRota[l.loja_id]; };
+      const num = function (n, tipo) { return '<span class="qtd ' + tipo + (n ? ' tem' : '') + '">' + n + '</span>'; };
+
+      const faixaCd = cds.map(function (l) {
+        const loja = lojaPorId(l.loja_id);
+        return '<div class="faixa-cd' + (l.retirar ? ' tem' : '') + (foraDaRota(l) ? ' fora' : '') + '" data-linha-loja="' + esc(l.loja_id) + '">' + marca(l) + ICONES.armazem +
+          '<span>' + esc(loja.nome) + ': <b>' + l.retirar + '</b> para coletar' + (l.retirar && l.retirar === 1 ? '' : '') + '</span>' +
+          (foraDaRota(l) ? '<span class="selo-fora">fora da rota</span>' : '') +
+          (l.atrasados ? '<span class="texto-atraso">' + l.atrasados + ' atrasado' + (l.atrasados > 1 ? 's' : '') + '</span>' : '') + '</div>';
+      }).join('');
+
+      const visiveis = m.ativo ? comuns : comuns.filter(temMovimento);
+      const semMov = m.ativo ? [] : comuns.filter(function (l) { return !temMovimento(l); });
+      const linha = function (l) {
+        const loja = lojaPorId(l.loja_id);
+        return '<div class="linha-loja' + (temMovimento(l) ? '' : ' sem-movimento') + '" data-linha-loja="' + esc(l.loja_id) + '">' +
+          '<span class="col-ini">' + marca(l) + parada(l) + '</span>' +
+          '<span class="col-nome"><span class="nome-loja">' + esc(nomeLojaCurto(l.loja_id)) + '</span>' + (loja.cidade ? '<small class="cidade-loja">' + esc(loja.cidade) + '</small>' : '') +
+            (foraDaRota(l) || l.atrasados ? '<span class="sub-loja">' +
+              (foraDaRota(l) ? '<span class="selo-fora">fora da rota</span>' : '') +
+              (l.atrasados ? '<span class="texto-atraso">' + l.atrasados + ' atrasado' + (l.atrasados > 1 ? 's' : '') + '</span>' : '') + '</span>' : '') +
+          '</span>' +
+          '<span class="col-num">' + num(l.retirar, 'coletar') + '</span><span class="col-num">' + num(l.entregar, 'entregar') + '</span></div>';
+      };
+      const qtdMarcadas = Object.keys(m.marcadas).length;
+      let rodape = '';
+      if (podeMontar && m.ativo) {
+        rodape = '<div class="barra-montar"><button type="button" class="botao secundario" data-cancelar-montar>Cancelar</button>' +
+          '<span class="espaco"><b>' + qtdMarcadas + '</b> loja' + (qtdMarcadas === 1 ? '' : 's') + '</span>' +
+          '<button type="button" class="botao" data-montar-rota>' + ICONES.rota + 'Montar rota</button></div>';
+      } else if (podeMontar) {
+        rodape = '<button type="button" class="botao secundario largo" data-abrir-montar>' + ICONES.rota + (r.rota ? 'Editar rota de hoje' : 'Montar rota de hoje') + '</button>';
+      }
+      return '<section class="cartao tabela-lojas-caixa' + (m.ativo ? ' montando' : '') + '">' +
+        '<div class="tabela-lojas-topo"><h3>' + (m.ativo ? 'Escolha as lojas da rota' : 'Onde o motorista precisa passar') + '</h3>' +
+          (m.ativo ? '<p class="descricao pequena">Já deixamos marcadas as lojas que têm algo para coletar ou entregar.</p>' : '') + '</div>' +
+        faixaCd +
+        '<div class="tabela-lojas">' +
+          '<div class="linha-loja cabecalho"><span class="col-ini"></span><span class="col-nome">Loja</span>' +
+            '<span class="col-num coletar">↑ Coletar</span><span class="col-num entregar">↓ Entregar</span></div>' +
+          visiveis.map(linha).join('') +
+          (!visiveis.length ? '<p class="descricao pequena vazio-lojas">Nenhuma loja com arquivo para coletar ou entregar agora.</p>' : '') +
+          (semMov.length ? '<div class="linha-loja sem-mov-resumo"><span class="col-ini"></span><span class="col-nome">Sem movimento: ' +
+            semMov.map(function (l) { const n = lojaPorId(l.loja_id).numero; return esc(n ? String(n).padStart(2, '0') : nomeLojaCurto(l.loja_id)); }).join(', ') + '</span></div>' : '') +
+          '<div class="linha-loja total"><span class="col-ini"></span><span class="col-nome">Total</span><span class="col-num">' + num(total.retirar, 'coletar') + '</span><span class="col-num">' + num(total.entregar, 'entregar') + '</span></div>' +
+        '</div>' + rodape +
       '</section>';
     };
 
@@ -968,12 +1010,39 @@
       ligarRotaCompacta(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarCards(corpo, 'rastreia_card_geral', function (novo) { escolhido = novo; desenhar(); });
       corpo.querySelectorAll('[data-loja-rota]').forEach(function (cx) {
-        cx.onchange = function () { if (cx.checked) marcadas[cx.dataset.lojaRota] = true; else delete marcadas[cx.dataset.lojaRota]; };
+        cx.onchange = function () {
+          if (cx.checked) m.marcadas[cx.dataset.lojaRota] = true; else delete m.marcadas[cx.dataset.lojaRota];
+          const q = Object.keys(m.marcadas).length;
+          const cont = corpo.querySelector('.barra-montar .espaco');
+          if (cont) cont.innerHTML = '<b>' + q + '</b> loja' + (q === 1 ? '' : 's');
+        };
       });
+      corpo.querySelectorAll('[data-linha-loja]').forEach(function (lin) {
+        if (!m.ativo) return;
+        lin.onclick = function (ev) {
+          if (ev.target.matches('input')) return;
+          const cx = lin.querySelector('input[data-loja-rota]');
+          if (cx) { cx.checked = !cx.checked; cx.onchange(); }
+        };
+      });
+      const abrirMontar = corpo.querySelector('[data-abrir-montar]');
+      if (abrirMontar) abrirMontar.onclick = function () {
+        m.ativo = true; m.marcadas = {};
+        lojas.forEach(function (l) { if (temMovimento(l)) m.marcadas[l.loja_id] = true; });
+        desenhar();
+        const cx = corpo.querySelector('.tabela-lojas-caixa');
+        if (cx && cx.scrollIntoView) cx.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      const cancelar = corpo.querySelector('[data-cancelar-montar]');
+      if (cancelar) cancelar.onclick = function () { m.ativo = false; desenhar(); };
       const montar = corpo.querySelector('[data-montar-rota]');
       if (montar) montar.onclick = function () {
-        const ids = lojas.map(function (l) { return l.loja_id; }).filter(function (id) { return marcadas[id]; });
+        const ids = lojas.slice().sort(function (a, b) {
+          const la = lojaPorId(a.loja_id), lb = lojaPorId(b.loja_id);
+          return (la.tipo === 'CD') - (lb.tipo === 'CD') || (Number(la.numero) || 0) - (Number(lb.numero) || 0);
+        }).map(function (l) { return l.loja_id; }).filter(function (id) { return m.marcadas[id]; });
         if (ids.length < 2) { toast('Marque pelo menos 2 lojas para montar a rota.', true); return; }
+        m.ativo = false;
         location.hash = '#/rota?lojas=' + ids.join(',');
       };
     };
