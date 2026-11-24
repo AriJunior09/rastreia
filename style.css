@@ -862,3 +862,19 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .aviso-aqui svg { width: 20px; height: 20px; flex: none; }
 .item-arquivo.aqui { border-color: #86efac; }
 .botao-coletei.feito, .botao-recebi.feito { background: transparent; color: var(--cor-ok); border: 1.5px solid var(--cor-ok); }
+
+/* v2.8.3 — botões Receber / Coletar em laranja com letra branca */
+.botao-recebi, .botao-recebi-grande { background: var(--c-laranja, #ea580c); border-color: var(--c-laranja, #ea580c); color: #fff; }
+.botao-recebi:hover, .botao-recebi-grande:hover { background: #c2410c; border-color: #c2410c; }
+.botao-recebi svg, .botao-recebi-grande svg { color: #fff; }
+
+/* v2.8.4 — selo da situação alinhado com o botão Coletar/Receber; ícone depois do texto */
+.item-acao { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.item-acao .selo { margin: 0; }
+.botao-recebi { gap: 6px; }
+@media (max-width: 480px) {
+  /* No celular: selo e botão numa linha embaixo do arquivo, um de cada lado, alinhados no centro */
+  .item-arquivo.com-acao { flex-wrap: wrap; }
+  .item-arquivo.com-acao .item-link { flex-basis: 100%; }
+  .item-acao { width: 100%; justify-content: space-between; }
+}

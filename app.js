@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '2.8.2';
+  const VERSAO_APP = '2.8.4';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -561,19 +561,21 @@
       if (t.volumes_pendentes > 0) marcas.push('<span class="selo erro">' + t.volumes_pendentes + (t.volumes_pendentes > 1 ? ' volumes faltando' : ' volume faltando') + '</span>');
       if (t.ocorrencia) marcas.push('<span class="selo erro">Ocorrência</span>');
       if (t.atrasado) marcas.push('<span class="selo aviso">Atrasado</span>');
+      // Com botão (Coletar/Receber) o selo da situação vai para o lado do botão, alinhado com ele
+      const comBotao = !!((opcoes.coletei && opcoes.coletei[t.arquivo]) || (opcoes.recebi && t.status === 'COM_MOTORISTA'));
       const conteudo =
-        '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + seloSituacao(t.status) + '</div>' +
+        '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + (comBotao ? '' : seloSituacao(t.status)) + '</div>' +
         '<div class="item-rota">' + rota + ' <span class="item-tempo">· ' + esc(tempoTexto(t.dias)) + '</span></div>' +
         (marcas.length ? '<div class="lista-chips">' + marcas.join('') + '</div>' : '');
       const classe = 'item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '');
       const link = '#/registrar?arq=' + encodeURIComponent(t.arquivo);
       if (opcoes.coletei && opcoes.coletei[t.arquivo]) {
         return '<div class="' + classe + ' com-acao aqui"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
-          '<button type="button" class="botao-recebi botao-coletei" data-coletei="' + esc(t.arquivo) + '">' + ICONES.certo + 'Coletei</button></div>';
+          '<div class="item-acao">' + seloSituacao(t.status) + '<button type="button" class="botao-recebi botao-coletei" data-coletei="' + esc(t.arquivo) + '">Coletar' + ICONES.certo + '</button></div></div>';
       }
       if (opcoes.recebi && t.status === 'COM_MOTORISTA') {
         return '<div class="' + classe + ' com-acao"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
-          '<button type="button" class="botao-recebi" data-recebi="' + esc(t.arquivo) + '">' + ICONES.certo + 'Recebi</button></div>';
+          '<div class="item-acao">' + seloSituacao(t.status) + '<button type="button" class="botao-recebi" data-recebi="' + esc(t.arquivo) + '">Receber' + ICONES.certo + '</button></div></div>';
       }
       return '<a href="' + link + '" class="' + classe + '">' + conteudo + '</a>';
     }).join('') + '</div>';
@@ -1033,7 +1035,7 @@
       card.coletei = {};
       aqui.forEach(function (t) { card.coletei[t.arquivo] = true; });
       card.avisoAqui = 'Você está ' + (ehCd ? 'no ' : 'na ') + '<b>' + esc(nomeLojaCurto(localAqui)) + '</b>: ' + aqui.length +
-        ' arquivo' + (aqui.length > 1 ? 's' : '') + ' para coletar aqui. Toque em <b>Coletei</b> em cada um.';
+        ' arquivo' + (aqui.length > 1 ? 's' : '') + ' para coletar aqui. Toque em <b>Coletar</b> em cada um.';
       // Ao chegar numa parada com coisa para coletar, abre o card certo sozinho
       if (Estado.paradaAberta !== localAqui + r.rota.ultima_hora) {
         Estado.paradaAberta = localAqui + r.rota.ultima_hora;
@@ -1752,9 +1754,9 @@
       if (!permitidos.length && ehLoja && tEx && tEx.destino_id === u.loja_id) {
         caixa.innerHTML = tEx.status === 'COM_MOTORISTA'
           ? '<div class="mensagem info">Este arquivo está vindo para a sua loja. Chegou? Confirme aqui:</div>' +
-            '<button type="button" class="botao largo grande botao-recebi-grande" data-recebi-aqui>' + ICONES.certo + 'Recebi</button>'
+            '<button type="button" class="botao largo grande botao-recebi-grande" data-recebi-aqui>' + ICONES.certo + 'Receber</button>'
           : '<div class="mensagem info">Este arquivo é para a sua loja (' + esc((NOMES_STATUS[tEx.status] || {}).titulo || '') + '). ' +
-            (tEx.status === 'ENTREGUE' ? 'Ele já foi entregue.' : 'Quando o motorista trouxer, toque em <b>Recebi</b>.') + '</div>';
+            (tEx.status === 'ENTREGUE' ? 'Ele já foi entregue.' : 'Quando o motorista trouxer, toque em <b>Receber</b>.') + '</div>';
         const b = caixa.querySelector('[data-recebi-aqui]');
         if (b) b.onclick = function () { receberArquivo(tEx, function () { Registro.ultimos.unshift({ arquivo: tEx.arquivo, status: 'ENTREGUE', texto: 'Recebido', hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }); desenharUltimos(); limparFormulario(); }); };
       } else if (!permitidos.length) {
