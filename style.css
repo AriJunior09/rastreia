@@ -587,6 +587,9 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .rota-rodape svg { width: 15px; height: 15px; }
 .rota-botoes { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; border-top: 1px solid var(--borda); padding-top: 10px; }
 .rota-botoes .descricao { margin: 0; }
+.rota-botoes .botao-rota { flex: 1 1 100%; justify-content: center; min-height: 50px; font-size: 16px; }
+.rota-botoes .botao-rota svg { width: 20px; height: 20px; }
+.link-desfazer { background: none; border: 0; padding: 4px 0; color: var(--texto-suave); text-decoration: underline; font: inherit; font-size: 13px; cursor: pointer; }
 .rota-vazia { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border: 2px dashed var(--borda); border-radius: 14px; color: var(--texto-suave); text-decoration: none; margin-bottom: 16px; font-size: 14px; }
 .rota-vazia svg { width: 22px; height: 22px; }
 
@@ -817,3 +820,37 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
   .topo .botao-menu { display: none; }
   #avisos-flutuantes { bottom: 92px; }
 }
+
+/* =========================================================
+   v2.6 — Registrar com botões (gerente digita menos)
+   ========================================================= */
+.loja-fixa {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+  background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); font-size: 16px;
+}
+.loja-fixa svg { width: 22px; height: 22px; flex: none; }
+.loja-fixa.errada { background: #fee2e2; color: #b91c1c; }
+.aviso-origem .mensagem { margin-top: 8px; }
+.botoes-lojas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 700px) { .botoes-lojas { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.botao-loja {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 58px; padding: 8px 4px;
+  border: 1.5px solid var(--borda); border-radius: 12px; background: var(--cartao); color: var(--texto); font: inherit; cursor: pointer;
+}
+.botao-loja b { font-size: 15px; }
+.botao-loja small { font-size: 11px; color: var(--texto-suave); line-height: 1.2; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; white-space: nowrap; }
+.botao-loja.escolhido { border-color: var(--cor-primaria); background: var(--cor-primaria-clara); color: var(--cor-primaria-escura); box-shadow: inset 0 0 0 1px var(--cor-primaria); }
+.botao-loja.escolhido small { color: var(--cor-primaria-escura); }
+.botao-loja:disabled { opacity: .35; cursor: default; }
+.passo-numero { display: flex; align-items: stretch; gap: 8px; max-width: 260px; }
+.passo-numero .botao { width: 52px; min-height: 48px; padding: 0; font-size: 24px; justify-content: center; flex: none; }
+.passo-numero input { text-align: center; font-size: 20px; font-weight: 800; min-width: 0; }
+.botoes-vendedores { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.botoes-vendedores .ajuda { margin: 0; }
+.chip-vendedor {
+  padding: 9px 14px; border-radius: 999px; border: 1.5px solid var(--borda); background: var(--cartao); color: var(--texto);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 40px;
+}
+.chip-vendedor.escolhido { border-color: var(--c-rosa, #db2777); background: #fce7f3; color: #9d174d; }
+.botao-recebi-grande { margin-top: 10px; background: var(--cor-ok); border-color: var(--cor-ok); }
+.botao-recebi-grande svg { width: 20px; height: 20px; }

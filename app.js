@@ -80,6 +80,7 @@
     el.className = 'toast' + (erro ? ' erro' : '');
     el.textContent = mensagem;
     caixa.appendChild(el);
+    while (caixa.children.length > 2) caixa.firstChild.remove(); // no máximo 2 avisos na tela
     setTimeout(function () { el.remove(); }, erro ? 5000 : 2800);
   }
 
@@ -818,7 +819,7 @@
         textoSalvar: 'Sim, recebi',
         aoSalvar: async function () {
           const dados = {
-            arquivo: t.arquivo, status: 'ENTREGUE', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
+            arquivo: t.arquivo, status: 'ENTREGUE', recebi: true, forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
             id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
             origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
           };
@@ -1089,14 +1090,20 @@
     return { linha1: l.nome, linha2: l.cidade || l.gerente || '' };
   }
 
+  /** "na Loja 03" / "no CD" — o CD é masculino. */
+  function ehCdParada(lojaId) { const l = lojaPorId(lojaId); return !!(l && l.tipo === 'CD'); }
+  function naParada(lojaId) { return (ehCdParada(lojaId) ? 'no ' : 'na ') + nomeParada(lojaId).linha1; }
+  function daParada(lojaId) { return (ehCdParada(lojaId) ? 'do ' : 'da ') + nomeParada(lojaId).linha1; }
+  function paraParada(lojaId) { return (ehCdParada(lojaId) ? 'para o ' : 'para a ') + nomeParada(lojaId).linha1; }
+
   function textoEstadoRota(rota) {
     const p = rota.paradas;
-    const nome = function (i) { return p[i] ? nomeParada(p[i].loja_id).linha1 : ''; };
+    const id = function (i) { return p[i] ? p[i].loja_id : ''; };
     switch (rota.estado) {
-      case 'AGUARDANDO': return 'Aguardando a saída da ' + nome(0);
-      case 'NA_PARADA': return 'Na ' + nome(rota.indice) + ' desde ' + horaCurta(rota.ultima_hora);
-      case 'A_CAMINHO': return 'A caminho da ' + nome(rota.indice + 1);
-      case 'VOLTANDO': return 'Voltando para a ' + nome(p.length - 1);
+      case 'AGUARDANDO': return 'Aguardando a saída ' + daParada(id(0));
+      case 'NA_PARADA': { const t = naParada(id(rota.indice)); return t.charAt(0).toUpperCase() + t.slice(1) + ' desde ' + horaCurta(rota.ultima_hora); }
+      case 'A_CAMINHO': return 'A caminho ' + daParada(id(rota.indice + 1));
+      case 'VOLTANDO': return 'Voltando ' + paraParada(id(p.length - 1));
       case 'CONCLUIDA': return 'Rota concluída às ' + horaCurta(rota.ultima_hora);
       default: return '';
     }
@@ -1143,20 +1150,23 @@
     // Último trecho da volta (pontilhado, com o texto "volta")
     const trechoVolta = rota.volta && n > 1 ? '<div class="rota-trecho-volta" style="left:' + ((n - 2) * 100 / (n - 1)) + '%"><span>volta</span></div>' : '';
     let botoes = '';
-    if (opcoes.podeMarcar && ehHoje && rota.estado !== 'CONCLUIDA') {
-      const prox = rota.estado === 'AGUARDANDO' ? 0 : rota.indice + 1;
-      const botaoParada = function (i, texto) {
-        return '<button type="button" class="botao secundario pequeno" data-marcar="PARADA" data-loja="' + esc(rota.paradas[i].loja_id) + '">' + ICONES.certo + texto + esc(nomeParada(rota.paradas[i].loja_id).linha1) + '</button>';
+    if (opcoes.podeMarcar && ehHoje) {
+      // Botões de andamento: Cheguei na X → A caminho da Y → Cheguei na Y ...
+      const idI = function (i) { return rota.paradas[i].loja_id; };
+      const botao = function (tipo, i, texto, principal) {
+        return '<button type="button" class="botao ' + (principal ? '' : 'secundario ') + 'botao-rota" data-marcar="' + tipo + '" data-indice="' + i + '">' + texto + '</button>';
       };
-      if (prox > n - 1) {
-        botoes = '<button type="button" class="botao secundario pequeno" data-marcar="RETORNO">' + ICONES.certo + 'Encerrar rota</button>';
-      } else if (rota.paradas[prox].chegada) {
-        botoes = (rota.estado === 'VOLTANDO' ? '' : '<button type="button" class="botao secundario pequeno" data-marcar="RETORNO">' + ICONES.rota + 'Iniciar volta</button> ') +
-          botaoParada(prox, 'Cheguei de volta na ');
-      } else {
-        botoes = botaoParada(prox, prox === 0 ? 'Saindo da ' : 'Cheguei na ');
+      let principal = '';
+      if (rota.estado === 'AGUARDANDO') principal = botao('CHEGUEI', 0, ICONES.loja + 'Cheguei ' + esc(naParada(idI(0))), true);
+      else if (rota.estado === 'NA_PARADA') {
+        const prox = rota.indice + 1;
+        principal = botao('A_CAMINHO', prox, ICONES.caminhao + (rota.paradas[prox].chegada ? 'Voltando ' + esc(paraParada(idI(prox))) : 'A caminho ' + esc(daParada(idI(prox)))), true);
+      } else if (rota.estado === 'A_CAMINHO' || rota.estado === 'VOLTANDO') {
+        const prox = rota.indice + 1;
+        principal = botao('CHEGUEI', prox, ICONES.loja + 'Cheguei ' + (rota.paradas[prox].chegada ? 'de volta ' : '') + esc(naParada(idI(prox))), true);
       }
-      botoes = '<div class="rota-botoes">' + botoes + '<span class="descricao pequena">Use quando não houver arquivo para registrar na parada.</span></div>';
+      const desfazer = rota.estado !== 'AGUARDANDO' ? '<button type="button" class="link-desfazer" data-marcar="DESFAZER">Desfazer última marcação</button>' : '';
+      if (principal || desfazer) botoes = '<div class="rota-botoes">' + principal + desfazer + '</div>';
     }
     return '<section class="rota-card" data-rota-data="' + esc(rota.data) + '" data-pos="' + pos + '">' +
       (opcoes.aviso || '') +
@@ -1182,7 +1192,7 @@
       const veiculo = card.querySelector('.rota-veiculo');
       let antiga = null;
       try { antiga = localStorage.getItem(chave); } catch (e) { /* ignora */ }
-      if (veiculo && antiga !== null && Number(antiga) !== nova && Number(antiga) <= nova) {
+      if (veiculo && antiga !== null && Number(antiga) !== nova) {
         veiculo.style.transition = 'none';
         veiculo.style.left = antiga + '%';
         requestAnimationFrame(function () {
@@ -1199,8 +1209,9 @@
         b.onclick = async function () {
           b.disabled = true;
           try {
-            const r = await chamar('marcarRota', { tipo: b.dataset.marcar, loja_id: b.dataset.loja || '' });
-            toast(b.dataset.marcar === 'RETORNO' ? 'Retorno iniciado.' : 'Parada marcada.');
+            if (b.dataset.marcar === 'DESFAZER' && !confirm('Desfazer a última marcação da rota?')) { b.disabled = false; return; }
+            const r = await chamar('marcarRota', { tipo: b.dataset.marcar, indice: b.dataset.indice === undefined ? '' : Number(b.dataset.indice) });
+            toast(b.dataset.marcar === 'DESFAZER' ? 'Última marcação desfeita.' : b.dataset.marcar === 'A_CAMINHO' ? 'Bom caminho!' : 'Chegada marcada.');
             if (aoMudar) aoMudar(r); else rotear();
           } catch (erro) {
             toast(erro.message, true);
@@ -1450,10 +1461,8 @@
     if (u.perfil === 'MOTORISTA') return ['COM_MOTORISTA', 'NO_CD', 'ENTREGUE'];
     const loja = lojaDoUsuario();
     if (loja && loja.tipo === 'CD') return ['COM_MOTORISTA', 'NO_CD'];
-    const lista = [];
-    if (!origemId || origemId === u.loja_id) lista.push('SEPARADA');
-    if (!destinoId || destinoId === u.loja_id) lista.push('ENTREGUE');
-    return lista;
+    // Gerente/estoquista: em Registrar só a saída da própria loja. A chegada é pelo botão "Recebi".
+    return (!origemId || origemId === u.loja_id) ? ['SEPARADA'] : [];
   }
 
   function opcoesLojas(selecionada) {
@@ -1488,6 +1497,8 @@
     let consultando = 0;
     let ultimoConsultado = ''; // evita consultar (e redesenhar) de novo o mesmo número
     let lidoPelaCamera = false;
+    const ehLoja = (u.perfil === 'GERENTE' || u.perfil === 'ESTOQUISTA') && lojaU && lojaU.tipo === 'LOJA';
+    const destinosBotoes = lojasOrdenadas(function (l) { return l.tipo === 'LOJA' && l.ativo && (!ehLoja || l.id !== u.loja_id); });
 
     el.innerHTML =
       '<h2>Registrar</h2><p class="descricao">Fotografe a etiqueta ou digite o número do arquivo, confira os dados e escolha a situação.</p>' +
@@ -1502,15 +1513,26 @@
         '<div class="campo"><label for="arq">Número do arquivo</label>' +
           '<input id="arq" name="arquivo" class="campo-arquivo" inputmode="numeric" pattern="[0-9]*" placeholder="Ex.: 64425" maxlength="8"></div>' +
         '<div class="info-arquivo"></div>' +
-        '<div class="linha-campos">' +
-          '<div class="campo"><label>De (origem)</label><select name="origem_id">' + opcoesLojas('') + '</select></div>' +
-          '<div class="campo"><label>Para (destino)</label><select name="destino_id">' + opcoesLojas('') + '</select></div>' +
-        '</div>' +
-        '<div class="linha-campos">' +
-          '<div class="campo"><label>Total de volumes</label><input name="total_volumes" type="number" min="1" max="99" value="1" inputmode="numeric"></div>' +
-          '<div class="campo"><label>Vendedor <span class="opcional">(opcional)</span></label><input name="vendedor_nome" list="lista-vendedores" placeholder="Ex.: Julio">' +
-            '<datalist id="lista-vendedores"></datalist></div>' +
-        '</div>' +
+        (ehLoja
+          ? '<div class="campo"><label>De (origem)</label><div class="loja-fixa">' + ICONES.loja + '<span>Sai da <b class="nome-origem">' + esc(nomeLojaCurto(u.loja_id)) + '</b></span></div>' +
+              '<select name="origem_id" class="oculto" aria-hidden="true">' + opcoesLojas(u.loja_id) + '</select><div class="aviso-origem"></div></div>' +
+            '<div class="campo"><label>Para (destino)</label><div class="botoes-lojas">' +
+              destinosBotoes.map(function (l) {
+                return '<button type="button" class="botao-loja" data-destino="' + esc(l.id) + '"><b>' + esc(l.numero ? 'Loja ' + String(l.numero).padStart(2, '0') : l.nome) + '</b>' +
+                  (l.cidade ? '<small>' + esc(l.cidade) + '</small>' : '') + '</button>';
+              }).join('') + '</div><select name="destino_id" class="oculto" aria-hidden="true">' + opcoesLojas('') + '</select></div>'
+          : '<div class="linha-campos">' +
+              '<div class="campo"><label>De (origem)</label><select name="origem_id">' + opcoesLojas('') + '</select></div>' +
+              '<div class="campo"><label>Para (destino)</label><select name="destino_id">' + opcoesLojas('') + '</select></div>' +
+            '</div>') +
+        '<div class="campo"><label>Total de volumes</label><div class="passo-numero">' +
+          '<button type="button" class="botao secundario" data-volumes="-1" aria-label="Menos um volume">−</button>' +
+          '<input name="total_volumes" type="number" min="1" max="99" value="1" inputmode="numeric">' +
+          '<button type="button" class="botao secundario" data-volumes="1" aria-label="Mais um volume">+</button></div></div>' +
+        '<div class="campo"><label>Vendedor <span class="opcional">(opcional)</span></label>' +
+          '<div class="botoes-vendedores"></div>' +
+          '<input name="vendedor_nome" list="lista-vendedores" placeholder="Outro nome">' +
+          '<datalist id="lista-vendedores"></datalist></div>' +
         '<div class="campo campo-volumes oculto"><label>Quais volumes</label><div class="volumes"></div>' +
           '<div class="ajuda">Desmarque os volumes que não estão com você agora.</div></div>' +
         '<div class="campo"><label>Situação</label><div class="opcoes-status"></div></div>' +
@@ -1530,6 +1552,20 @@
       const nomes = Estado.base.vendedores.filter(function (v) { return v.ativo && (!destino || v.loja_id === destino || v.loja_id === 'TODAS'); })
         .map(function (v) { return v.nome; }).sort();
       form.querySelector('#lista-vendedores').innerHTML = nomes.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('');
+      const caixa = form.querySelector('.botoes-vendedores');
+      if (!destino) { caixa.innerHTML = '<span class="ajuda">Escolha o destino para ver os vendedores.</span>'; return; }
+      const escolhido = form.vendedor_nome.value.trim().toLowerCase();
+      caixa.innerHTML = nomes.map(function (n) {
+        return '<button type="button" class="chip-vendedor' + (n.toLowerCase() === escolhido ? ' escolhido' : '') + '" data-vendedor="' + esc(n) + '">' + esc(n) + '</button>';
+      }).join('');
+      caixa.querySelectorAll('[data-vendedor]').forEach(function (b) {
+        b.onclick = function () {
+          const mesmo = form.vendedor_nome.value.trim().toLowerCase() === b.dataset.vendedor.toLowerCase();
+          form.vendedor_nome.value = mesmo ? '' : b.dataset.vendedor;
+          form.vendedor_nome.dispatchEvent(new Event('input'));
+          atualizarVendedores();
+        };
+      });
     };
 
     const volumesSelecionados = function () {
@@ -1575,9 +1611,19 @@
           (permitidos.length === 1 ? permitidos[0] : '');
       }
       const caixa = form.querySelector('.opcoes-status');
-      if (!permitidos.length) {
-        caixa.innerHTML = '<div class="mensagem erro">Seu perfil não pode registrar este arquivo' +
-          (u.loja_id ? ' (a ' + esc(nomeLojaCurto(u.loja_id)) + ' não é origem nem destino).' : '.') + '</div>';
+      const tEx = consulta && consulta.existe ? consulta.transferencia : null;
+      if (!permitidos.length && ehLoja && tEx && tEx.destino_id === u.loja_id) {
+        caixa.innerHTML = tEx.status === 'COM_MOTORISTA'
+          ? '<div class="mensagem info">Este arquivo está vindo para a sua loja. Chegou? Confirme aqui:</div>' +
+            '<button type="button" class="botao largo grande botao-recebi-grande" data-recebi-aqui>' + ICONES.certo + 'Recebi</button>'
+          : '<div class="mensagem info">Este arquivo é para a sua loja (' + esc((NOMES_STATUS[tEx.status] || {}).titulo || '') + '). ' +
+            (tEx.status === 'ENTREGUE' ? 'Ele já foi entregue.' : 'Quando o motorista trouxer, toque em <b>Recebi</b>.') + '</div>';
+        const b = caixa.querySelector('[data-recebi-aqui]');
+        if (b) b.onclick = function () { receberArquivo(tEx, function () { Registro.ultimos.unshift({ arquivo: tEx.arquivo, status: 'ENTREGUE', texto: 'Recebido', hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) }); desenharUltimos(); limparFormulario(); }); };
+      } else if (!permitidos.length) {
+        caixa.innerHTML = '<div class="mensagem erro">' + (ehLoja
+          ? 'Você só pode registrar arquivos que saem da ' + esc(nomeLojaCurto(u.loja_id)) + '.'
+          : 'Seu perfil não pode registrar este arquivo' + (u.loja_id ? ' (a ' + esc(nomeLojaCurto(u.loja_id)) + ' não é origem nem destino).' : '.')) + '</div>';
       } else {
         caixa.innerHTML = ['SEPARADA', 'COM_MOTORISTA', 'NO_CD', 'ENTREGUE'].filter(function (s) { return permitidos.indexOf(s) >= 0; }).map(function (s) {
           const n = NOMES_STATUS[s];
@@ -1588,6 +1634,23 @@
         caixa.querySelectorAll('input[name=status]').forEach(function (r) { r.onchange = ajustarCd; });
       }
       ajustarCd();
+      sincronizarBotoes();
+    };
+
+    // Deixa os botões (destino, volumes) iguais aos campos escondidos
+    const sincronizarBotoes = function () {
+      const travado = form.destino_id.disabled;
+      form.querySelectorAll('[data-destino]').forEach(function (b) {
+        b.classList.toggle('escolhido', b.dataset.destino === form.destino_id.value);
+        b.disabled = travado && b.dataset.destino !== form.destino_id.value;
+      });
+      if (ehLoja) {
+        const origem = form.origem_id.value;
+        form.querySelector('.nome-origem').textContent = nomeLojaCurto(origem || u.loja_id);
+        form.querySelector('.loja-fixa').classList.toggle('errada', !!origem && origem !== u.loja_id);
+        form.querySelector('.aviso-origem').innerHTML = origem && origem !== u.loja_id
+          ? '<div class="mensagem erro">Este arquivo sai da ' + esc(nomeLojaCurto(origem)) + ', não da sua loja. Você só registra arquivos que saem da ' + esc(nomeLojaCurto(u.loja_id)) + '.</div>' : '';
+      }
     };
 
     const ajustarCd = function () {
@@ -1609,9 +1672,7 @@
 
     const preencherNovo = function () {
       travarLojas(false);
-      if ((u.perfil === 'GERENTE' || u.perfil === 'ESTOQUISTA') && lojaU && lojaU.tipo === 'LOJA' && !form.origem_id.value && !form.destino_id.value) {
-        form.origem_id.value = u.loja_id;
-      }
+      if (ehLoja && !form.origem_id.value) form.origem_id.value = u.loja_id;
     };
 
     const mostrarConsulta = function () {
@@ -1621,7 +1682,7 @@
         return;
       }
       if (!consulta.existe) {
-        info.innerHTML = '<div class="mensagem info">Arquivo novo: ainda não foi registrado. Preencha origem, destino e volumes.</div>';
+        info.innerHTML = '<div class="mensagem info">Arquivo novo: ainda não foi registrado. ' + (ehLoja ? 'Toque na loja de destino e confira os volumes.' : 'Preencha origem, destino e volumes.') + '</div>';
         preencherNovo();
         return;
       }
@@ -1694,8 +1755,8 @@
       if (ultimoConsultado && ultimoConsultado !== String(Number(form.arquivo.value))) {
         ultimoConsultado = '';
         limparConsulta();
-        form.origem_id.value = ''; form.destino_id.value = ''; form.total_volumes.value = 1; form.vendedor_nome.value = '';
-        desenharVolumes(); desenharStatus();
+        form.origem_id.value = ehLoja ? u.loja_id : ''; form.destino_id.value = ''; form.total_volumes.value = 1; form.vendedor_nome.value = '';
+        desenharVolumes(); atualizarVendedores(); desenharStatus();
       }
       if (form.arquivo.value.length >= 5) espera = setTimeout(consultar, 700);
     };
@@ -1704,6 +1765,24 @@
     form.origem_id.onchange = desenharStatus;
     form.destino_id.onchange = function () { atualizarVendedores(); desenharStatus(); };
     form.total_volumes.oninput = function () { desenharVolumes(); desenharStatus(); };
+    form.vendedor_nome.addEventListener('input', function () {
+      const v = form.vendedor_nome.value.trim().toLowerCase();
+      form.querySelectorAll('[data-vendedor]').forEach(function (b) { b.classList.toggle('escolhido', b.dataset.vendedor.toLowerCase() === v); });
+    });
+    form.querySelectorAll('[data-volumes]').forEach(function (b) {
+      b.onclick = function () {
+        const n = Math.max(1, Math.min(99, (parseInt(form.total_volumes.value, 10) || 1) + Number(b.dataset.volumes)));
+        form.total_volumes.value = n;
+        form.total_volumes.dispatchEvent(new Event('input'));
+      };
+    });
+    form.querySelectorAll('[data-destino]').forEach(function (b) {
+      b.onclick = function () {
+        if (form.destino_id.disabled) return;
+        form.destino_id.value = b.dataset.destino;
+        form.destino_id.dispatchEvent(new Event('change'));
+      };
+    });
 
     const desenharUltimos = function () {
       const caixa = el.querySelector('.ultimos');
@@ -1722,7 +1801,7 @@
       lidoPelaCamera = false;
       limparMarcasLeitura();
       form.querySelector('.resultado-leitura').innerHTML = '';
-      form.origem_id.value = ''; form.destino_id.value = '';
+      form.origem_id.value = ehLoja ? u.loja_id : ''; form.destino_id.value = '';
       form.total_volumes.value = 1; form.vendedor_nome.value = ''; form.observacao.value = '';
       limparConsulta();
       desenharVolumes();
@@ -1774,7 +1853,8 @@
       const erro = function (t) { msg.innerHTML = '<div class="mensagem erro">' + esc(t) + '</div>'; msg.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
       if (arquivo.length < 3) return erro('Digite o número do arquivo.');
       if (consulta && consulta.semAcesso) return erro('Este arquivo não envolve a sua loja.');
-      if (!form.origem_id.value || !form.destino_id.value) return erro('Escolha a loja de origem e a de destino.');
+      if (ehLoja && form.origem_id.value !== u.loja_id) return erro('Você só pode registrar arquivos que saem da ' + nomeLojaCurto(u.loja_id) + '.');
+      if (!form.origem_id.value || !form.destino_id.value) return erro(ehLoja ? 'Toque na loja de destino.' : 'Escolha a loja de origem e a de destino.');
       if (form.origem_id.value === form.destino_id.value) return erro('A origem e o destino não podem ser a mesma loja.');
       if (!volumes.length) return erro('Marque pelo menos um volume.');
       if (!status) return erro('Escolha a situação.');
@@ -1862,7 +1942,7 @@
         if (l.volume_total > 1 && l.volume_total !== t.total_volumes) avisos.push('A etiqueta diz ' + l.volume_total + ' volumes; o arquivo está com ' + t.total_volumes + '.');
         if (l.vendedor_nome && !form.vendedor_nome.value) { form.vendedor_nome.value = l.vendedor_nome; marcarCampo('vendedor_nome', l.confianca.vendedor); }
       } else {
-        form.origem_id.value = l.origem_id || '';
+        form.origem_id.value = l.origem_id || (ehLoja ? u.loja_id : '');
         form.destino_id.value = l.destino_id || '';
         form.total_volumes.value = l.volume_total || 1;
         form.vendedor_nome.value = l.vendedor_nome || '';
