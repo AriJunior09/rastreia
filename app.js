@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '2.8.0';
+  const VERSAO_APP = '2.8.2';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -476,12 +476,45 @@
     if (!ROTAS[rota]) rota = '#/inicio';
     if (rota.indexOf('#/config') === 0 && !ehAdm()) rota = '#/inicio';
     clearInterval(Estado.timerPagina);
+    clearInterval(Estado.timerRota);
+    Estado.aoVoltar = null;
     Estado.montarRota = null;
     const conteudo = montarLayout(rota);
     ROTAS[rota](conteudo);
   }
 
   window.addEventListener('hashchange', rotear);
+
+  // Quando a pessoa volta para a aba/app (trocou de janela, desbloqueou o celular), atualiza na hora
+  let ultimaVolta = 0;
+  const aoVoltarParaTela = function () {
+    if (document.visibilityState !== 'visible' || !Estado.aoVoltar || Date.now() - ultimaVolta < 5000) return;
+    ultimaVolta = Date.now();
+    Estado.aoVoltar();
+  };
+  document.addEventListener('visibilitychange', aoVoltarParaTela);
+  window.addEventListener('focus', aoVoltarParaTela);
+
+  /** Assinatura da rota: muda quando o motorista marca algo ou a rota é editada. */
+  function assinaturaRota(rota) {
+    if (!rota) return '';
+    return [rota.estado, rota.indice, rota.ultima_hora, rota.paradas.map(function (p) { return p.loja_id + (p.passou_em || ''); }).join(','), rota.motorista_id].join('|');
+  }
+
+  /** Confere a rota de hoje a cada 20 s (consulta leve). Se mudou, chama aoMudar. */
+  function vigiarRota(dia, aoMudar, assinaturaAtual) {
+    clearInterval(Estado.timerRota);
+    let ocupado = false;
+    Estado.timerRota = setInterval(async function () {
+      if (ocupado || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      ocupado = true;
+      try {
+        const r = await chamar('rotaDoDia', { data: dia });
+        if (assinaturaRota(r.rota) !== assinaturaAtual()) aoMudar(r);
+      } catch (e) { /* tenta de novo na próxima */ }
+      ocupado = false;
+    }, 20000);
+  }
 
   /* =========================================================
    *  PÁGINA: INÍCIO
@@ -690,10 +723,13 @@
     info.onclick = function () { carregar(true); };
     ativarPuxarParaAtualizar(el, carregar);
     carregar(false);
-    // Atualiza sozinho a cada minuto (rota do motorista e números)
+    // Atualiza sozinho: os números a cada minuto; a rota do motorista a cada 20 segundos;
+    // e na hora quando a pessoa volta para a aba ou para o app.
     Estado.timerPagina = setInterval(function () {
       if (document.visibilityState === 'visible' && navigator.onLine) carregar(false);
     }, 60000);
+    vigiarRota(diaIso(new Date()), function () { carregar(false); }, function () { return assinaturaRota(ultimo && ultimo.rota); });
+    Estado.aoVoltar = function () { if (navigator.onLine) carregar(false); };
   }
 
   /* ---------- Cards compactos com a lista abrindo logo abaixo ---------- */
@@ -1344,6 +1380,19 @@
     const editor = el.querySelector('.rota-editor');
     let editorJaUsouSugestao = false;
 
+    let rotaVista = null;
+    // Só o desenho da rota (o editor não é mexido, para não apagar o que a pessoa está montando)
+    const desenharVisao = function (r) {
+      rotaVista = r.rota;
+      visao.innerHTML = r.rota ? rotaHtml(r.rota, { podeMarcar: ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0, destaque: u.loja_id }) :
+        '<div class="vazio">Nenhuma rota para ' + (dia === r.hoje ? 'hoje' : data(dia)) + '.</div>';
+      ativarRota(visao, function () { carregar(); });
+    };
+    vigiarRota(dia, desenharVisao, function () { return assinaturaRota(rotaVista); });
+    Estado.aoVoltar = async function () {
+      try { desenharVisao(await chamar('rotaDoDia', { data: dia })); } catch (e) { /* ignora */ }
+    };
+
     const carregar = async function () {
       let r, proximas;
       try {
@@ -1352,9 +1401,7 @@
         visao.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
         return;
       }
-      visao.innerHTML = r.rota ? rotaHtml(r.rota, { podeMarcar: ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0, destaque: u.loja_id }) :
-        '<div class="vazio">Nenhuma rota para ' + (dia === r.hoje ? 'hoje' : data(dia)) + '.</div>';
-      ativarRota(visao, function () { carregar(); });
+      desenharVisao(r);
       el.querySelector('.rota-proximas').innerHTML = proximas.length ? blocoHtml('Próximas rotas (' + proximas.length + ')', '<div class="lista-rotas">' + proximas.map(function (p) {
         return '<a href="#/rota?data=' + esc(p.data) + '" class="item-rota-dia' + (p.data === dia ? ' atual' : '') + '"><b>' + esc(data(p.data)) + '</b>' +
           '<span>' + p.paradas.map(function (id) { return esc(nomeParada(id).linha1); }).join(' → ') + (p.volta !== false && p.paradas.length ? ' → volta à ' + esc(nomeParada(p.paradas[0]).linha1) : '') + '</span>' +
