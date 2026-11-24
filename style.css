@@ -878,3 +878,7 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
   .item-arquivo.com-acao .item-link { flex-basis: 100%; }
   .item-acao { width: 100%; justify-content: space-between; }
 }
+
+/* Receber em verde; Coletar continua laranja */
+.botao-recebi:not(.botao-coletei), .botao-recebi-grande { background: #15803d; border-color: #15803d; }
+.botao-recebi:not(.botao-coletei):hover, .botao-recebi-grande:hover { background: #166534; border-color: #166534; }
