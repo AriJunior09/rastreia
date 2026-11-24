@@ -69,6 +69,9 @@
     return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : isoDia;
   }
 
+  // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
+  const VERSAO_APP = '2.8.0';
+
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
     if (!caixa) {
@@ -362,7 +365,8 @@
       '</header>' +
       '<div id="faixa-fila"></div>' +
       '<div class="layout">' +
-        '<nav class="menu">' + menu + '</nav>' +
+        '<nav class="menu">' + menu +
+          '<div class="menu-rodape">Desenvolvido por: Ari Junior<br>Versão: ' + VERSAO_APP + '</div></nav>' +
         '<div class="fundo-menu"></div>' +
         '<main class="conteudo"></main>' +
       '</div>' +
@@ -530,6 +534,10 @@
         (marcas.length ? '<div class="lista-chips">' + marcas.join('') + '</div>' : '');
       const classe = 'item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '');
       const link = '#/registrar?arq=' + encodeURIComponent(t.arquivo);
+      if (opcoes.coletei && opcoes.coletei[t.arquivo]) {
+        return '<div class="' + classe + ' com-acao aqui"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
+          '<button type="button" class="botao-recebi botao-coletei" data-coletei="' + esc(t.arquivo) + '">' + ICONES.certo + 'Coletei</button></div>';
+      }
       if (opcoes.recebi && t.status === 'COM_MOTORISTA') {
         return '<div class="' + classe + ' com-acao"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
           '<button type="button" class="botao-recebi" data-recebi="' + esc(t.arquivo) + '">' + ICONES.certo + 'Recebi</button></div>';
@@ -715,8 +723,10 @@
   }
 
   function painelListaHtml(titulo, itens, total, lado, vazio, linkTodos, opcoes) {
-    const mostrar = (itens || []).slice(0, 5);
+    const aqui = opcoes && opcoes.coletei ? Object.keys(opcoes.coletei).length : 0;
+    const mostrar = (itens || []).slice(0, Math.max(5, aqui + 2));
     return '<div class="painel-topo"><b>' + esc(titulo) + '</b><span>' + total + '</span></div>' +
+      (opcoes && opcoes.avisoAqui ? '<div class="aviso-aqui">' + ICONES.loja + '<span>' + opcoes.avisoAqui + '</span></div>' : '') +
       (opcoes && opcoes.dica ? '<p class="descricao pequena">' + esc(opcoes.dica) + '</p>' : '') +
       listaArquivosHtml(mostrar, lado, vazio, opcoes) +
       (total > mostrar.length ? '<a class="ver-todos" href="' + linkTodos + '">Ver todos (' + total + ') ›</a>' :
@@ -846,6 +856,43 @@
       });
   }
 
+  /** Motorista toca em "Coletei": registra "Com motorista" com todos os volumes, sem janela. */
+  async function coletarArquivo(t, botao, depois) {
+    botao.disabled = true;
+    const d = {
+      arquivo: t.arquivo, status: 'COM_MOTORISTA', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
+      id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
+      origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
+    };
+    const pronto = function (texto) {
+      botao.classList.add('feito');
+      botao.innerHTML = ICONES.certo + texto;
+      if (depois) depois();
+    };
+    const enviar = async function () {
+      try {
+        const r = await chamar('registrar', d);
+        if (r.precisaConfirmar) {
+          botao.disabled = false;
+          confirmarAvisos(r.avisos, function () { d.confirmar = true; botao.disabled = true; return enviar(); });
+          return;
+        }
+        toast('Arq. ' + t.arquivo + ' coletado.');
+        pronto('Coletado');
+      } catch (erro) {
+        if (erro.offline) {
+          Fila.adicionar(d);
+          toast('Sem internet: coleta guardada no aparelho.');
+          pronto('Guardado');
+        } else {
+          botao.disabled = false;
+          if (!erro.sessaoExpirada) toast(erro.message, true);
+        }
+      }
+    };
+    await enviar();
+  }
+
   /* ---------- Tela inicial do gerente/estoquista ---------- */
   function desenharInicioLoja(corpo, r, atualizar) {
     const rec = r.recebendo;
@@ -902,7 +949,7 @@
   }
 
   /* ---------- Tela inicial do administrador, CEO e motorista ---------- */
-  function desenharInicioGeral(corpo, r) {
+  function desenharInicioGeral(corpo, r, atualizar) {
     const u = Estado.usuario;
     const podeMontar = u.perfil === 'ADM' || u.perfil === 'CEO';
     const podeMarcar = ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0;
@@ -919,6 +966,7 @@
         dica: r.entregues_hoje + ' entregue(s) hoje.' }
     ];
     let escolhido = lerCardEscolhido('rastreia_card_geral', r.aguardando_coleta ? 'coleta' : '');
+
     // Posição de cada loja na rota de hoje (1ª, 2ª...) e se o motorista já passou
     const naRota = {};
     if (r.rota) r.rota.paradas.forEach(function (p, i) {
@@ -929,6 +977,34 @@
     const temMovimento = function (l) { return !!(l.retirar || l.entregar); };
     // Modo "escolher lojas da rota": fica guardado para a atualização automática não desfazer
     const m = Estado.montarRota || (Estado.montarRota = { ativo: false, marcadas: {} });
+
+    // Motorista parado numa loja ou no CD: os arquivos para coletar ali ganham o botão "Coletei".
+    // Recalculado a cada desenho, porque a rota muda quando ele toca em "Cheguei na...".
+    cards.forEach(function (c) { c.listaOriginal = c.lista; });
+    const prepararColeta = function () {
+      cards.forEach(function (c) { c.lista = c.listaOriginal; c.coletei = null; c.avisoAqui = ''; });
+      const localAqui = u.perfil === 'MOTORISTA' && r.rota && r.rota.estado === 'NA_PARADA' && r.rota.data === diaIso(new Date())
+        ? r.rota.paradas[r.rota.indice].loja_id : '';
+      const lojaAqui = localAqui ? lojaPorId(localAqui) : null;
+      if (!lojaAqui) return;
+      const ehCd = lojaAqui.tipo === 'CD';
+      const card = cards.filter(function (c) { return c.id === (ehCd ? 'cd' : 'coleta'); })[0];
+      const feitos = Estado.coletados || {};
+      const daqui = function (t) { return !feitos[t.arquivo] && (ehCd ? t.status === 'NO_CD' && (!t.local_atual_id || t.local_atual_id === localAqui) : t.origem_id === localAqui); };
+      const aqui = card.lista.filter(daqui);
+      if (!aqui.length) return;
+      card.lista = aqui.concat(card.lista.filter(function (t) { return !daqui(t); }));
+      card.coletei = {};
+      aqui.forEach(function (t) { card.coletei[t.arquivo] = true; });
+      card.avisoAqui = 'Você está ' + (ehCd ? 'no ' : 'na ') + '<b>' + esc(nomeLojaCurto(localAqui)) + '</b>: ' + aqui.length +
+        ' arquivo' + (aqui.length > 1 ? 's' : '') + ' para coletar aqui. Toque em <b>Coletei</b> em cada um.';
+      // Ao chegar numa parada com coisa para coletar, abre o card certo sozinho
+      if (Estado.paradaAberta !== localAqui + r.rota.ultima_hora) {
+        Estado.paradaAberta = localAqui + r.rota.ultima_hora;
+        escolhido = card.id;
+        Estado.animarPainel = true;
+      }
+    };
 
     const tabelaHtml = function () {
       const cds = lojas.filter(function (l) { return lojaPorId(l.loja_id).tipo === 'CD'; });
@@ -1012,8 +1088,9 @@
     };
 
     const desenhar = function () {
+      prepararColeta();
       const c = cards.filter(function (x) { return x.id === escolhido; })[0];
-      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica }) : '';
+      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica, coletei: c.coletei, avisoAqui: c.avisoAqui }) : '';
       let rotaTopo = '';
       if (r.rota && r.rota.estado !== 'CONCLUIDA') rotaTopo = rotaHtml(r.rota, { podeMarcar: podeMarcar });
       else if (r.rota) rotaTopo = rotaCompactaHtml(r.rota, { podeMarcar: podeMarcar });
@@ -1029,6 +1106,19 @@
       ativarRota(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarRotaCompacta(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarCards(corpo, 'rastreia_card_geral', function (novo) { escolhido = novo; desenhar(); });
+      corpo.querySelectorAll('[data-coletei]').forEach(function (b) {
+        b.onclick = function () {
+          const t = (c ? c.lista : []).filter(function (x) { return x.arquivo === b.dataset.coletei; })[0];
+          if (!t || b.classList.contains('feito')) return;
+          coletarArquivo(t, b, function () {
+            delete c.coletei[t.arquivo];
+            (Estado.coletados = Estado.coletados || {})[t.arquivo] = true;
+            // Atualiza os números quando terminar de coletar tudo daqui (ou depois de alguns segundos)
+            clearTimeout(Estado.timerColeta);
+            Estado.timerColeta = setTimeout(function () { if (atualizar && document.body.contains(corpo)) atualizar(); }, Object.keys(c.coletei).length ? 6000 : 800);
+          });
+        };
+      });
       corpo.querySelectorAll('[data-loja-rota]').forEach(function (cx) {
         cx.onchange = function () {
           if (cx.checked) m.marcadas[cx.dataset.lojaRota] = true; else delete m.marcadas[cx.dataset.lojaRota];

@@ -127,6 +127,8 @@ button, input, select, textarea { font: inherit; }
 .menu a.desabilitado { opacity: .5; pointer-events: none; }
 .menu a .etiqueta-breve { margin-left: auto; font-size: 11px; background: var(--fundo); padding: 2px 6px; border-radius: 6px; }
 .menu .separador { border-top: 1px solid var(--borda); margin: 10px 4px; }
+.menu { display: flex; flex-direction: column; }
+.menu-rodape { margin-top: auto; padding: 16px 12px 8px; font-size: 12px; line-height: 1.5; color: var(--texto-suave); }
 
 .conteudo { flex: 1; padding: 20px; max-width: 1100px; width: 100%; }
 
@@ -854,3 +856,9 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .chip-vendedor.escolhido { border-color: var(--c-rosa, #db2777); background: #fce7f3; color: #9d174d; }
 .botao-recebi-grande { margin-top: 10px; background: var(--cor-ok); border-color: var(--cor-ok); }
 .botao-recebi-grande svg { width: 20px; height: 20px; }
+
+/* v2.8 — botão "Coletei" do motorista */
+.aviso-aqui { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; padding: 10px 12px; border-radius: 10px; background: #dcfce7; color: #166534; font-size: 14px; }
+.aviso-aqui svg { width: 20px; height: 20px; flex: none; }
+.item-arquivo.aqui { border-color: #86efac; }
+.botao-coletei.feito, .botao-recebi.feito { background: transparent; color: var(--cor-ok); border: 1.5px solid var(--cor-ok); }
