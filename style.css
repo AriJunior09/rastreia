@@ -882,3 +882,14 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 /* Receber em verde; Coletar continua laranja */
 .botao-recebi:not(.botao-coletei), .botao-recebi-grande { background: #15803d; border-color: #15803d; }
 .botao-recebi:not(.botao-coletei):hover, .botao-recebi-grande:hover { background: #166534; border-color: #166534; }
+
+/* v2.9 — lista dos cards com rolagem; botões do motorista "Deixar no CD" e "Entregue" */
+.painel-rolagem { max-height: min(460px, 60vh); overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 2px; }
+.painel-rolagem::-webkit-scrollbar { width: 8px; }
+.painel-rolagem::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, .18); border-radius: 8px; }
+.botao-recebi.botao-no-cd { background: var(--c-marrom, #a16207); border-color: var(--c-marrom, #a16207); color: #fff; }
+.botao-recebi.botao-no-cd:hover { background: #854d0e; border-color: #854d0e; }
+.botao-recebi.botao-entregue { background: #15803d; border-color: #15803d; color: #fff; }
+.botao-recebi.botao-entregue:hover { background: #166534; border-color: #166534; }
+.botao-recebi.botao-no-cd.feito { background: transparent; color: var(--c-marrom, #a16207); border: 1.5px solid var(--c-marrom, #a16207); }
+.botao-recebi:disabled:not(.feito) { opacity: .5; cursor: default; }

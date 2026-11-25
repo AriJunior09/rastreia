@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '2.8.5';
+  const VERSAO_APP = '2.9.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -562,13 +562,21 @@
       if (t.ocorrencia) marcas.push('<span class="selo erro">Ocorrência</span>');
       if (t.atrasado) marcas.push('<span class="selo aviso">Atrasado</span>');
       // Com botão (Coletar/Receber) o selo da situação vai para o lado do botão, alinhado com ele
-      const comBotao = !!((opcoes.coletei && opcoes.coletei[t.arquivo]) || (opcoes.recebi && t.status === 'COM_MOTORISTA'));
+      const acoesMotorista = !!(opcoes.acoesMotorista && t.status === 'COM_MOTORISTA');
+      const comBotao = acoesMotorista || !!((opcoes.coletei && opcoes.coletei[t.arquivo]) || (opcoes.recebi && t.status === 'COM_MOTORISTA'));
       const conteudo =
         '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + (comBotao ? '' : seloSituacao(t.status)) + '</div>' +
         '<div class="item-rota">' + rota + ' <span class="item-tempo">· ' + esc(tempoTexto(t.dias)) + '</span></div>' +
         (marcas.length ? '<div class="lista-chips">' + marcas.join('') + '</div>' : '');
       const classe = 'item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '');
       const link = '#/registrar?arq=' + encodeURIComponent(t.arquivo);
+      if (acoesMotorista) {
+        return '<div class="' + classe + ' com-acao"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
+          '<div class="item-acao">' +
+            '<button type="button" class="botao-recebi botao-no-cd" data-acao-rapida="NO_CD" data-arquivo="' + esc(t.arquivo) + '">Deixar no CD' + ICONES.armazem + '</button>' +
+            '<button type="button" class="botao-recebi botao-entregue" data-acao-rapida="ENTREGUE" data-arquivo="' + esc(t.arquivo) + '">Entregue' + ICONES.certo + '</button>' +
+          '</div></div>';
+      }
       if (opcoes.coletei && opcoes.coletei[t.arquivo]) {
         return '<div class="' + classe + ' com-acao aqui"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
           '<div class="item-acao">' + seloSituacao(t.status) + '<button type="button" class="botao-recebi botao-coletei" data-coletei="' + esc(t.arquivo) + '">Coletar' + ICONES.certo + '</button></div></div>';
@@ -761,12 +769,12 @@
   }
 
   function painelListaHtml(titulo, itens, total, lado, vazio, linkTodos, opcoes) {
-    const aqui = opcoes && opcoes.coletei ? Object.keys(opcoes.coletei).length : 0;
-    const mostrar = (itens || []).slice(0, Math.max(5, aqui + 2));
+    // Todos os itens que vieram do servidor (até 50), numa área com rolagem própria
+    const mostrar = itens || [];
     return '<div class="painel-topo"><b>' + esc(titulo) + '</b><span>' + total + '</span></div>' +
       (opcoes && opcoes.avisoAqui ? '<div class="aviso-aqui">' + ICONES.loja + '<span>' + opcoes.avisoAqui + '</span></div>' : '') +
       (opcoes && opcoes.dica ? '<p class="descricao pequena">' + esc(opcoes.dica) + '</p>' : '') +
-      listaArquivosHtml(mostrar, lado, vazio, opcoes) +
+      '<div class="painel-rolagem">' + listaArquivosHtml(mostrar, lado, vazio, opcoes) + '</div>' +
       (total > mostrar.length ? '<a class="ver-todos" href="' + linkTodos + '">Ver todos (' + total + ') ›</a>' :
         (total ? '<a class="ver-todos discreto" href="' + linkTodos + '">Abrir na lista ›</a>' : ''));
   }
@@ -894,17 +902,21 @@
       });
   }
 
-  /** Motorista toca em "Coletei": registra "Com motorista" com todos os volumes, sem janela. */
-  async function coletarArquivo(t, botao, depois) {
+  /** Motorista toca em "Coletar": registra "Com motorista" com todos os volumes, sem janela. */
+  function coletarArquivo(t, botao, depois) { return registrarRapido(t, 'COM_MOTORISTA', botao, 'Coletado', depois); }
+
+  /** Um toque registra a situação (Com motorista, No CD, Entregue) com todos os volumes, sem janela. */
+  async function registrarRapido(t, status, botao, textoFeito, depois) {
     botao.disabled = true;
+    const cds = lojasOrdenadas(function (l) { return l.tipo === 'CD' && l.ativo; });
     const d = {
-      arquivo: t.arquivo, status: 'COM_MOTORISTA', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
+      arquivo: t.arquivo, status: status, cd_id: status === 'NO_CD' && cds.length ? cds[0].id : '', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
       id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
       origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
     };
     const pronto = function (texto) {
       botao.classList.add('feito');
-      botao.innerHTML = ICONES.certo + texto;
+      botao.innerHTML = texto + ICONES.certo;
       if (depois) depois();
     };
     const enviar = async function () {
@@ -915,8 +927,8 @@
           confirmarAvisos(r.avisos, function () { d.confirmar = true; botao.disabled = true; return enviar(); });
           return;
         }
-        toast('Arq. ' + t.arquivo + ' coletado.');
-        pronto('Coletado');
+        toast('Arq. ' + t.arquivo + ': ' + textoFeito.toLowerCase() + '.');
+        pronto(textoFeito);
       } catch (erro) {
         if (erro.offline) {
           Fila.adicionar(d);
@@ -1128,7 +1140,8 @@
     const desenhar = function () {
       prepararColeta();
       const c = cards.filter(function (x) { return x.id === escolhido; })[0];
-      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica, coletei: c.coletei, avisoAqui: c.avisoAqui }) : '';
+      const acoesMotorista = c && c.id === 'motorista' && ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0;
+      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica, coletei: c.coletei, avisoAqui: c.avisoAqui, acoesMotorista: acoesMotorista }) : '';
       let rotaTopo = '';
       if (r.rota && r.rota.estado !== 'CONCLUIDA') rotaTopo = rotaHtml(r.rota, { podeMarcar: podeMarcar });
       else if (r.rota) rotaTopo = rotaCompactaHtml(r.rota, { podeMarcar: podeMarcar });
@@ -1144,6 +1157,22 @@
       ativarRota(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarRotaCompacta(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarCards(corpo, 'rastreia_card_geral', function (novo) { escolhido = novo; desenhar(); });
+      corpo.querySelectorAll('[data-acao-rapida]').forEach(function (b) {
+        b.onclick = function () {
+          const t = (c ? c.lista : []).filter(function (x) { return x.arquivo === b.dataset.arquivo; })[0];
+          if (!t || b.classList.contains('feito')) return;
+          const outros = b.parentNode.querySelectorAll('button');
+          outros.forEach(function (o) { if (o !== b) o.disabled = true; });
+          const ehCd = b.dataset.acaoRapida === 'NO_CD';
+          registrarRapido(t, b.dataset.acaoRapida, b, ehCd ? 'No CD' : 'Entregue', function () {
+            outros.forEach(function (o) { if (o !== b) o.remove(); });
+            clearTimeout(Estado.timerColeta);
+            Estado.timerColeta = setTimeout(function () { if (atualizar && document.body.contains(corpo)) atualizar(); }, 6000);
+          });
+          // se der erro, libera o outro botão de novo
+          setTimeout(function () { if (!b.classList.contains('feito')) outros.forEach(function (o) { o.disabled = false; }); }, 4000);
+        };
+      });
       corpo.querySelectorAll('[data-coletei]').forEach(function (b) {
         b.onclick = function () {
           const t = (c ? c.lista : []).filter(function (x) { return x.arquivo === b.dataset.coletei; })[0];
