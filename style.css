@@ -884,7 +884,7 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .botao-recebi:not(.botao-coletei):hover, .botao-recebi-grande:hover { background: #166534; border-color: #166534; }
 
 /* v2.9 — lista dos cards com rolagem; botões do motorista "Deixar no CD" e "Entregue" */
-.painel-rolagem { max-height: min(460px, 60vh); overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 2px; }
+.painel-rolagem { max-height: min(460px, 60vh); overflow-y: auto; overscroll-behavior: auto; margin: 0 -4px; padding: 0 4px 2px; }
 .painel-rolagem::-webkit-scrollbar { width: 8px; }
 .painel-rolagem::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, .18); border-radius: 8px; }
 .botao-recebi.botao-no-cd { background: var(--c-marrom, #a16207); border-color: var(--c-marrom, #a16207); color: #fff; }

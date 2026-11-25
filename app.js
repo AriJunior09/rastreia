@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '2.9.0';
+  const VERSAO_APP = '2.9.1';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -484,6 +484,29 @@
   }
 
   window.addEventListener('hashchange', rotear);
+
+  // Rodinha do mouse dentro das listas com rolagem: quando a lista chega no fim (ou no topo),
+  // a rolagem continua na página inteira, sem precisar tirar o mouse de cima da lista.
+  document.addEventListener('wheel', function (ev) {
+    const caixa = ev.target.closest && ev.target.closest('.painel-rolagem');
+    if (!caixa || ev.ctrlKey || Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+    const fator = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? window.innerHeight : 1;
+    const delta = ev.deltaY * fator;
+    const noTopo = caixa.scrollTop <= 0;
+    const noFim = caixa.scrollTop + caixa.clientHeight >= caixa.scrollHeight - 1;
+    if ((delta < 0 && noTopo) || (delta > 0 && noFim)) {
+      ev.preventDefault();
+      window.scrollBy(0, delta);
+    } else {
+      // o que sobrar depois de chegar no limite da lista vai para a página
+      const resto = delta > 0 ? delta - (caixa.scrollHeight - caixa.clientHeight - caixa.scrollTop) : delta + caixa.scrollTop;
+      if ((delta > 0 && resto > 0) || (delta < 0 && resto < 0)) {
+        ev.preventDefault();
+        caixa.scrollTop += delta - resto;
+        window.scrollBy(0, resto);
+      }
+    }
+  }, { passive: false });
 
   // Quando a pessoa volta para a aba/app (trocou de janela, desbloqueou o celular), atualiza na hora
   let ultimaVolta = 0;

@@ -3,7 +3,7 @@
  * Os dados (servidor do Google) nunca são guardados aqui.
  * Sempre que publicar uma nova versão, aumente o número em VERSAO_CACHE.
  */
-const VERSAO_CACHE = 'rastreia-v24';
+const VERSAO_CACHE = 'rastreia-v25';
 const ARQUIVOS = [
   './',
   './index.html',
