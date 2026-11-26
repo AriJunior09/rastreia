@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '3.3.1';
+  const VERSAO_APP = '3.4.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -637,7 +637,8 @@
       if (t.ocorrencia) marcas.push('<span class="selo erro">Ocorrência</span>');
       if (t.atrasado) marcas.push('<span class="selo aviso">Atrasado</span>');
       // Com botão (Coletar/Receber) o selo da situação vai para o lado do botão, alinhado com ele
-      const acoesMotorista = !!(opcoes.acoesMotorista && t.status === 'COM_MOTORISTA');
+      const acaoAqui = opcoes.acoesMotorista && t.status === 'COM_MOTORISTA' ? opcoes.acoesMotorista[t.arquivo] : '';
+      const acoesMotorista = !!acaoAqui;
       const comBotao = acoesMotorista || !!((opcoes.coletei && opcoes.coletei[t.arquivo]) || (opcoes.recebi && t.status === 'COM_MOTORISTA'));
       const conteudo =
         '<div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span>' + (comBotao ? '' : seloSituacao(t.status)) + '</div>' +
@@ -646,10 +647,12 @@
       const classe = 'item-arquivo' + (t.atrasado || t.volumes_pendentes || t.ocorrencia ? ' alerta' : '');
       const link = '#/registrar?arq=' + encodeURIComponent(t.arquivo);
       if (acoesMotorista) {
-        return '<div class="' + classe + ' com-acao"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
-          '<div class="item-acao">' +
-            '<button type="button" class="botao-recebi botao-no-cd" data-acao-rapida="NO_CD" data-arquivo="' + esc(t.arquivo) + '">Deixar no CD' + ICONES.armazem + '</button>' +
-            '<button type="button" class="botao-recebi botao-entregue" data-acao-rapida="ENTREGUE" data-arquivo="' + esc(t.arquivo) + '">Entregue' + ICONES.certo + '</button>' +
+        // Só o botão que faz sentido onde o motorista está: no CD → "Deixar no CD"; na loja de destino → "Entregue"
+        return '<div class="' + classe + ' com-acao aqui"><a class="item-link" href="' + link + '">' + conteudo + '</a>' +
+          '<div class="item-acao">' + seloSituacao(t.status) +
+            (acaoAqui === 'NO_CD'
+              ? '<button type="button" class="botao-recebi botao-no-cd" data-acao-rapida="NO_CD" data-arquivo="' + esc(t.arquivo) + '">Deixar no CD' + ICONES.armazem + '</button>'
+              : '<button type="button" class="botao-recebi botao-entregue" data-acao-rapida="ENTREGUE" data-arquivo="' + esc(t.arquivo) + '">Entregue' + ICONES.certo + '</button>') +
           '</div></div>';
       }
       if (opcoes.coletei && opcoes.coletei[t.arquivo]) {
@@ -1166,27 +1169,49 @@
     // Recalculado a cada desenho, porque a rota muda quando ele toca em "Cheguei na...".
     cards.forEach(function (c) { c.listaOriginal = c.lista; });
     const prepararColeta = function () {
-      cards.forEach(function (c) { c.lista = c.listaOriginal; c.coletei = null; c.avisoAqui = ''; });
+      cards.forEach(function (c) { c.lista = c.listaOriginal; c.coletei = null; c.avisoAqui = ''; c.acoes = null; });
       const localAqui = u.perfil === 'MOTORISTA' && r.rota && r.rota.estado === 'NA_PARADA' && r.rota.data === diaIso(new Date())
         ? r.rota.paradas[r.rota.indice].loja_id : '';
       const lojaAqui = localAqui ? lojaPorId(localAqui) : null;
       if (!lojaAqui) return;
       const ehCd = lojaAqui.tipo === 'CD';
-      const card = cards.filter(function (c) { return c.id === (ehCd ? 'cd' : 'coleta'); })[0];
       const feitos = Estado.coletados || {};
+      const nomeAqui = (ehCd ? 'no ' : 'na ') + '<b>' + esc(nomeLojaCurto(localAqui)) + '</b>';
+      let abrir = '';
+
+      // Card "Com motorista": no CD, "Deixar no CD" em todos; na loja, "Entregue" só nos que são para esta loja
+      const cardMot = cards.filter(function (c) { return c.id === 'motorista'; })[0];
+      const entregaAqui = function (t) { return !feitos[t.arquivo] && t.status === 'COM_MOTORISTA' && (ehCd || t.destino_id === localAqui); };
+      const paraDeixar = cardMot.lista.filter(entregaAqui);
+      if (paraDeixar.length) {
+        cardMot.lista = paraDeixar.concat(cardMot.lista.filter(function (t) { return !entregaAqui(t); }));
+        cardMot.acoes = {};
+        paraDeixar.forEach(function (t) { cardMot.acoes[t.arquivo] = ehCd ? 'NO_CD' : 'ENTREGUE'; });
+        cardMot.avisoAqui = 'Você está ' + nomeAqui + ': ' + paraDeixar.length + ' arquivo' + (paraDeixar.length > 1 ? 's' : '') +
+          (ehCd ? ' no carro. Toque em <b>Deixar no CD</b> nos que vão ficar aqui.' : ' para entregar aqui. Toque em <b>Entregue</b> em cada um.');
+        abrir = 'motorista';
+      }
+      const card = cards.filter(function (c) { return c.id === (ehCd ? 'cd' : 'coleta'); })[0];
       const daqui = function (t) { return !feitos[t.arquivo] && (ehCd ? t.status === 'NO_CD' && (!t.local_atual_id || t.local_atual_id === localAqui) : t.origem_id === localAqui); };
       const aqui = card.lista.filter(daqui);
-      if (!aqui.length) return;
-      card.lista = aqui.concat(card.lista.filter(function (t) { return !daqui(t); }));
-      card.coletei = {};
-      aqui.forEach(function (t) { card.coletei[t.arquivo] = true; });
-      card.avisoAqui = 'Você está ' + (ehCd ? 'no ' : 'na ') + '<b>' + esc(nomeLojaCurto(localAqui)) + '</b>: ' + aqui.length +
-        ' arquivo' + (aqui.length > 1 ? 's' : '') + ' para coletar aqui. Toque em <b>Coletar</b> em cada um.';
-      // Ao chegar numa parada com coisa para coletar, abre o card certo sozinho
-      if (Estado.paradaAberta !== localAqui + r.rota.ultima_hora) {
+      if (aqui.length) {
+        card.lista = aqui.concat(card.lista.filter(function (t) { return !daqui(t); }));
+        card.coletei = {};
+        aqui.forEach(function (t) { card.coletei[t.arquivo] = true; });
+        card.avisoAqui = 'Você está ' + nomeAqui + ': ' + aqui.length +
+          ' arquivo' + (aqui.length > 1 ? 's' : '') + ' para coletar aqui. Toque em <b>Coletar</b> em cada um.';
+        if (!abrir) abrir = card.id;
+        // Tem as duas coisas: cada aviso lembra da outra
+        if (cardMot.acoes) {
+          cardMot.avisoAqui += ' Depois, veja <b>' + (ehCd ? 'No CD' : 'Aguardando coleta') + '</b>: ' + aqui.length + ' para coletar.';
+          card.avisoAqui += ' Veja também <b>Com motorista</b>: ' + paraDeixar.length + (ehCd ? ' no carro.' : ' para entregar.');
+        }
+      }
+      // Ao chegar numa parada, abre o card certo sozinho (primeiro entregar, depois coletar)
+      if (abrir && Estado.paradaAberta !== localAqui + r.rota.ultima_hora) {
         Estado.paradaAberta = localAqui + r.rota.ultima_hora;
-        escolhido = card.id;
-        try { localStorage.setItem('rastreia_card_geral', card.id); } catch (e) { /* ignora */ } // continua aberto depois de atualizar
+        escolhido = abrir;
+        try { localStorage.setItem('rastreia_card_geral', abrir); } catch (e) { /* ignora */ } // continua aberto depois de atualizar
         Estado.animarPainel = true;
       }
     };
@@ -1275,8 +1300,7 @@
     const desenhar = function () {
       prepararColeta();
       const c = cards.filter(function (x) { return x.id === escolhido; })[0];
-      const acoesMotorista = c && c.id === 'motorista' && ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0;
-      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica, coletei: c.coletei, avisoAqui: c.avisoAqui, acoesMotorista: acoesMotorista }) : '';
+      const painel = c ? painelListaHtml(c.titulo, c.lista, c.numero, 'ambos', c.vazio, c.link, { dica: c.dica, coletei: c.coletei, avisoAqui: c.avisoAqui, acoesMotorista: c.acoes }) : '';
       let rotaTopo = '';
       if (r.rota && r.rota.estado !== 'CONCLUIDA') rotaTopo = rotaHtml(r.rota, { podeMarcar: podeMarcar });
       else if (r.rota) rotaTopo = rotaCompactaHtml(r.rota, { podeMarcar: podeMarcar });
@@ -1310,8 +1334,10 @@
           const ehCd = b.dataset.acaoRapida === 'NO_CD';
           outros.forEach(function (o) { if (o !== b) o.classList.add('oculto'); });
           registrarRapido(t, b.dataset.acaoRapida, b, ehCd ? 'No CD' : 'Entregue', function () {
+            (Estado.coletados = Estado.coletados || {})[t.arquivo] = true;
             atualizarQuandoTerminar();
           }, function () {
+            if (Estado.coletados) delete Estado.coletados[t.arquivo];
             // servidor recusou ou pediu confirmação: o outro botão volta
             outros.forEach(function (o) { if (o !== b) { o.classList.remove('oculto'); o.disabled = false; } });
           });
