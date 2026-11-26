@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '3.3.0';
+  const VERSAO_APP = '3.3.1';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
