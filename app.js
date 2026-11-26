@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '3.0.0';
+  const VERSAO_APP = '3.2.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -428,10 +428,28 @@
     try { guardarResumo(await Api.chamar('resumoInicio')); } catch (e) { /* o sino fica como estava */ }
   }
 
+  /** Para o administrador: avisa se o backup automático não está rodando (nunca feito ou há mais de 36 h). */
+  function avisoBackup() {
+    const u = Estado.usuario;
+    if (!u || u.perfil !== 'ADM' || !Estado.base || !Estado.base.config) return '';
+    const ultimo = Estado.base.config.ultimo_backup;
+    if (!ultimo) return 'O backup automático ainda não foi ligado. No Apps Script, rode a função prepararSegurancaEBackup.';
+    const horas = (Date.now() - new Date(ultimo).getTime()) / 3600000;
+    if (horas > 36) return 'O último backup foi há ' + Math.floor(horas / 24) + ' dia(s). Confira o backup automático no Apps Script.';
+    return '';
+  }
+
+  function textoUltimoBackup() {
+    const ultimo = Estado.base && Estado.base.config && Estado.base.config.ultimo_backup;
+    if (!ultimo) return 'ainda não configurado';
+    const d = new Date(ultimo);
+    return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
   function desenharContadorSino() {
     const cont = document.querySelector('[data-sino] .contador');
     if (!cont || !Estado.resumo) return;
-    const n = (Estado.resumo.dados.atencao || []).length;
+    const n = (Estado.resumo.dados.atencao || []).length + (avisoBackup() ? 1 : 0);
     cont.textContent = n > 99 ? '99+' : String(n);
     cont.classList.toggle('oculto', n === 0);
     const painel = document.querySelector('.painel-sino');
@@ -444,7 +462,9 @@
     if (!Estado.resumo) { painel.innerHTML = carregandoHtml('Carregando...'); atualizarSino(true); return; }
     const r = Estado.resumo.dados;
     const itens = r.atencao || [];
-    painel.innerHTML = '<div class="painel-titulo"><b>Precisam de atenção</b><span>' + itens.length + '</span></div>' +
+    const backup = avisoBackup();
+    painel.innerHTML = (backup ? '<div class="mensagem aviso">' + ICONES.alerta + ' ' + esc(backup) + '</div>' : '') +
+      '<div class="painel-titulo"><b>Precisam de atenção</b><span>' + itens.length + '</span></div>' +
       '<p class="descricao pequena">Parados há mais de ' + esc(r.dias_alerta_pendente) + ' dias (' + esc(r.dias_alerta_cd) + ' no CD), com volume faltando ou com ocorrência.</p>' +
       (itens.length ? listaArquivosHtml(itens.slice(0, 15), 'ambos') : '<div class="vazio pequeno">Tudo em dia. Nenhum arquivo precisa de atenção.</div>') +
       (itens.length ? '<a class="botao secundario largo" href="#/transferencias?situacao=ATENCAO">Ver todos na lista</a>' : '');
@@ -519,25 +539,42 @@
   document.addEventListener('visibilitychange', aoVoltarParaTela);
   window.addEventListener('focus', aoVoltarParaTela);
 
+  // Sem ninguém mexendo (mouse, teclado, toque, rolagem) por 10 minutos, a atualização automática pausa.
+  // No primeiro movimento depois disso, a tela atualiza na hora e volta ao ritmo normal.
+  const INATIVO_DEPOIS_MS = 10 * 60 * 1000;
+  let ultimaAtividade = Date.now();
+  const aoMexer = function () {
+    const estavaParado = Date.now() - ultimaAtividade > INATIVO_DEPOIS_MS;
+    ultimaAtividade = Date.now();
+    if (estavaParado) { ultimaVolta = 0; aoVoltarParaTela(); }
+  };
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach(function (ev) {
+    window.addEventListener(ev, aoMexer, { passive: true, capture: true });
+  });
+  /** A tela está sendo usada? (aba visível, com internet e alguém mexeu nos últimos 10 minutos) */
+  function telaEmUso() {
+    return document.visibilityState === 'visible' && navigator.onLine && Date.now() - ultimaAtividade < INATIVO_DEPOIS_MS;
+  }
+
   /** Assinatura da rota: muda quando o motorista marca algo ou a rota é editada. */
   function assinaturaRota(rota) {
     if (!rota) return '';
     return [rota.estado, rota.indice, rota.ultima_hora, rota.paradas.map(function (p) { return p.loja_id + (p.passou_em || ''); }).join(','), rota.motorista_id].join('|');
   }
 
-  /** Confere a rota de hoje a cada 20 s (consulta leve). Se mudou, chama aoMudar. */
+  /** Confere a rota de hoje a cada 30 s (consulta leve). Se mudou, chama aoMudar. */
   function vigiarRota(dia, aoMudar, assinaturaAtual) {
     clearInterval(Estado.timerRota);
     let ocupado = false;
     Estado.timerRota = setInterval(async function () {
-      if (ocupado || document.visibilityState !== 'visible' || !navigator.onLine) return;
+      if (ocupado || !telaEmUso()) return;
       ocupado = true;
       try {
         const r = await chamar('rotaDoDia', { data: dia });
         if (assinaturaRota(r.rota) !== assinaturaAtual()) aoMudar(r);
       } catch (e) { /* tenta de novo na próxima */ }
       ocupado = false;
-    }, 20000);
+    }, 30000);
   }
 
   /* =========================================================
@@ -759,11 +796,12 @@
     info.onclick = function () { carregar(true); };
     ativarPuxarParaAtualizar(el, carregar);
     carregar(false);
-    // Atualiza sozinho: os números a cada minuto; a rota do motorista a cada 20 segundos;
+    // Atualiza sozinho SÓ com a tela em uso (aba visível, com internet e alguém mexeu nos últimos 10 min):
+    // os números a cada 2 minutos; a rota do motorista a cada 30 segundos (consulta leve);
     // e na hora quando a pessoa volta para a aba ou para o app.
     Estado.timerPagina = setInterval(function () {
-      if (document.visibilityState === 'visible' && navigator.onLine) carregar(false);
-    }, 60000);
+      if (telaEmUso()) carregar(false);
+    }, 120000);
     vigiarRota(diaIso(new Date()), function () { carregar(false); }, function () { return assinaturaRota(ultimo && ultimo.rota); });
     Estado.aoVoltar = function () { if (navigator.onLine) carregar(false); };
   }
@@ -2519,7 +2557,9 @@
         saida.innerHTML =
           '<div class="resumo-lista"><b>' + r.total + '</b> arquivo(s) · ' + abertos + ' em aberto · ' + (r.itens.length - abertos) + ' entregue(s)' +
             (atencao ? ' · <span class="texto-erro">' + atencao + ' precisam de atenção</span>' : '') +
-            (r.limitado ? '<br><small>Mostrando os ' + r.itens.length + ' mais recentes. Use os filtros para refinar.</small>' : '') + '</div>' +
+            (r.limitado ? '<br><small>Mostrando os ' + r.itens.length + ' mais recentes. Use os filtros para refinar.</small>' : '') +
+            (r.arquivo_morto === false && (!filtros.situacao || filtros.situacao === 'ENTREGUE')
+              ? '<br><small>Entregues há mais de ' + esc(r.dias_arquivo_morto) + ' dias ficam no arquivo morto. Para vê-los, pesquise o número ou escolha "Todo o período" ou um período mais antigo.</small>' : '') + '</div>' +
           listaArquivosHtml(r.itens, 'ambos', 'Nenhum arquivo encontrado com esses filtros.');
       } catch (erro) {
         if (meu === pedido) saida.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
@@ -2713,7 +2753,10 @@
     const c = Estado.base.config;
     let logo = c.empresa_logo || '';
     const cores = ['#1d4ed8', '#0f766e', '#15803d', '#b91c1c', '#c2410c', '#7c3aed', '#be185d', '#334155'];
-    corpo.innerHTML = '<form class="cartao" style="max-width:560px" novalidate><div class="msg"></div>' +
+    corpo.innerHTML = '<div class="cartao" style="max-width:560px;margin-bottom:14px"><b>Backup automático</b>' +
+        '<p class="descricao pequena" style="margin:4px 0 0">Último backup: <b>' + esc(textoUltimoBackup()) + '</b>. Cópia diária da planilha na pasta "Rastreia - Backups" do Google Drive (guarda os 30 mais recentes).</p>' +
+        (avisoBackup() ? '<div class="mensagem aviso" style="margin-top:8px">' + esc(avisoBackup()) + '</div>' : '') + '</div>' +
+      '<form class="cartao" style="max-width:560px" novalidate><div class="msg"></div>' +
       '<div class="campo"><label>Logo da empresa</label>' +
         '<div class="previa-logo">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<span class="descricao">Sem logo</span>') + '</div>' +
         '<div class="barra-acoes"><label class="botao secundario">Escolher imagem<input type="file" accept="image/*" class="oculto" data-logo></label>' +
@@ -2895,7 +2938,8 @@
       ['dias_alerta_pendente', 'Alerta de arquivo pendente (dias)', 'number', 'Arquivos sem movimentação há mais dias que isso aparecem no sino.'],
       ['dias_alerta_cd', 'Alerta de mercadoria parada no CD (dias)', 'number', 'Arquivos no CD há mais dias que isso aparecem no sino.'],
       ['dias_apelido_antigo', 'Nome do gerente antigo aceito por (dias)', 'number', 'Quando o gerente de uma loja muda, o nome antigo continua sendo reconhecido nas etiquetas durante esse período.'],
-      ['sessao_dias', 'Manter conectado por (dias)', 'number', 'Depois desse prazo o usuário precisa entrar com a senha de novo.']
+      ['sessao_dias', 'Manter conectado por (dias)', 'number', 'Depois desse prazo o usuário precisa entrar com a senha de novo.'],
+      ['dias_arquivo_morto', 'Arquivo morto depois de (dias)', 'number', 'Arquivos entregues há mais dias que isso vão para o arquivo morto (toda madrugada). Continuam aparecendo na busca e nos relatórios.']
     ];
     corpo.innerHTML = '<form class="cartao" style="max-width:560px" novalidate><div class="msg"></div>' +
       campos.map(function (f) {
