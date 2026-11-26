@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '2.9.1';
+  const VERSAO_APP = '3.0.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -200,8 +200,9 @@
     document.body.appendChild(fundo);
     const form = fundo.querySelector('form');
     const fechar = function () { fundo.remove(); };
-    fundo.querySelector('[data-fechar]').onclick = fechar;
-    fundo.addEventListener('mousedown', function (e) { if (e.target === fundo) fechar(); });
+    const cancelar = function () { fechar(); if (opcoes.aoCancelar) opcoes.aoCancelar(); };
+    fundo.querySelector('[data-fechar]').onclick = cancelar;
+    fundo.addEventListener('mousedown', function (e) { if (e.target === fundo) cancelar(); });
     form.onsubmit = async function (e) {
       e.preventDefault();
       const botao = form.querySelector('button[type=submit]');
@@ -731,6 +732,8 @@
     let carregando = false;
     const carregar = async function (manual) {
       if (carregando) return;
+      // Com registros ainda indo para o servidor, a atualização automática espera (senão os botões voltariam)
+      if (!manual && Envio.pendentes()) return;
       carregando = true;
       info.innerHTML = '<span class="girando mini"></span>Atualizando...';
       try {
@@ -902,68 +905,112 @@
             id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
             origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
           };
-          const enviar = async function (d) {
-            try {
-              const r = await chamar('registrar', d);
-              if (r.precisaConfirmar) {
-                confirmarAvisos(r.avisos, function () { d.confirmar = true; return enviar(d); });
-                return;
-              }
-              toast(r.mensagem || 'Recebimento registrado.');
-              depois();
-            } catch (erro) {
-              if (erro.offline) {
-                Fila.adicionar(d);
-                toast('Sem internet: recebimento guardado no aparelho. Será enviado quando a conexão voltar.');
-              } else if (!erro.sessaoExpirada) {
-                toast(erro.message, true);
-              }
-            }
-          };
-          setTimeout(function () { enviar(dados); }, 0);
+          // A tela muda na hora; o envio vai para a fila em segundo plano
+          const botao = document.querySelector('[data-recebi="' + t.arquivo + '"]');
+          const original = botao ? botao.innerHTML : '';
+          const marcar = function () { if (botao) { botao.disabled = true; botao.classList.add('feito', 'enviando'); botao.innerHTML = 'Recebido' + ICONES.certo; } };
+          const voltar = function () { if (botao) { botao.disabled = false; botao.classList.remove('feito', 'enviando'); botao.innerHTML = original; } };
+          marcar();
+          toast('Arq. ' + t.arquivo + ' recebido.');
+          Envio.registrar(dados, {
+            ok: function () { if (botao) botao.classList.remove('enviando'); },
+            offline: function () { if (botao) botao.classList.remove('enviando'); toast('Sem internet: recebimento guardado no aparelho. Será enviado quando a conexão voltar.'); },
+            precisaConfirmar: voltar, confirmou: marcar, erro: voltar,
+            fimDaFila: function () { if (depois) depois(); }
+          });
         }
       });
   }
 
-  /** Motorista toca em "Coletar": registra "Com motorista" com todos os volumes, sem janela. */
-  function coletarArquivo(t, botao, depois) { return registrarRapido(t, 'COM_MOTORISTA', botao, 'Coletado', depois); }
+  /* ---------- Envio em segundo plano ----------
+   * O botão muda NA HORA (ex.: "Coletado ✓") e o registro vai para o servidor numa fila,
+   * um de cada vez, enquanto a pessoa continua tocando nos próximos. Só se o servidor
+   * recusar (ou pedir confirmação) é que a tela avisa e o botão volta.
+   */
+  const Envio = (function () {
+    let cadeia = Promise.resolve();
+    let pendentes = 0;
+    const indicador = function () {
+      let el = document.getElementById('enviando-fila');
+      if (!pendentes) { if (el) el.remove(); return; }
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'enviando-fila';
+        el.className = 'enviando-fila';
+        document.body.appendChild(el);
+      }
+      el.innerHTML = '<span class="girando mini"></span>Enviando ' + pendentes + ' registro' + (pendentes > 1 ? 's' : '') + '...';
+    };
+    window.addEventListener('beforeunload', function (e) {
+      if (pendentes) { e.preventDefault(); e.returnValue = ''; }
+    });
+    function registrar(d, cb) {
+      cb = cb || {};
+      pendentes++;
+      indicador();
+      cadeia = cadeia.then(async function () {
+        try {
+          const r = await chamar('registrar', d);
+          if (r.precisaConfirmar) {
+            if (cb.precisaConfirmar) cb.precisaConfirmar();
+            confirmarAvisos(r.avisos, function () {
+              d.confirmar = true;
+              if (cb.confirmou) cb.confirmou();
+              registrar(d, cb);
+            }, cb.cancelou);
+          } else if (cb.ok) cb.ok(r);
+        } catch (erro) {
+          if (erro.offline) {
+            Fila.adicionar(d);
+            if (cb.offline) cb.offline();
+            else toast('Sem internet: registro guardado no aparelho.');
+          } else {
+            if (!erro.sessaoExpirada) toast('Arq. ' + d.arquivo + ': ' + erro.message, true);
+            if (cb.erro) cb.erro(erro);
+          }
+        } finally {
+          pendentes--;
+          indicador();
+          if (!pendentes && cb.fimDaFila) cb.fimDaFila();
+        }
+      });
+    }
+    return { registrar: registrar, pendentes: function () { return pendentes; } };
+  })();
 
-  /** Um toque registra a situação (Com motorista, No CD, Entregue) com todos os volumes, sem janela. */
-  async function registrarRapido(t, status, botao, textoFeito, depois) {
-    botao.disabled = true;
+  /** Motorista toca em "Coletar": registra "Com motorista" com todos os volumes, sem janela. */
+  function coletarArquivo(t, botao, depois, aoVoltar) { return registrarRapido(t, 'COM_MOTORISTA', botao, 'Coletado', depois, aoVoltar); }
+
+  /** Um toque registra a situação (Com motorista, No CD, Entregue) com todos os volumes, sem janela.
+   *  A tela muda na hora; o envio acontece em segundo plano (Envio). */
+  function registrarRapido(t, status, botao, textoFeito, depois, aoVoltar) {
     const cds = lojasOrdenadas(function (l) { return l.tipo === 'CD' && l.ativo; });
     const d = {
       arquivo: t.arquivo, status: status, cd_id: status === 'NO_CD' && cds.length ? cds[0].id : '', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
       id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
       origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
     };
-    const pronto = function (texto) {
-      botao.classList.add('feito');
-      botao.innerHTML = texto + ICONES.certo;
-      if (depois) depois();
+    const original = botao.innerHTML;
+    const marcar = function () {
+      botao.disabled = true;
+      botao.classList.add('feito', 'enviando');
+      botao.innerHTML = textoFeito + ICONES.certo;
     };
-    const enviar = async function () {
-      try {
-        const r = await chamar('registrar', d);
-        if (r.precisaConfirmar) {
-          botao.disabled = false;
-          confirmarAvisos(r.avisos, function () { d.confirmar = true; botao.disabled = true; return enviar(); });
-          return;
-        }
-        toast('Arq. ' + t.arquivo + ': ' + textoFeito.toLowerCase() + '.');
-        pronto(textoFeito);
-      } catch (erro) {
-        if (erro.offline) {
-          Fila.adicionar(d);
-          toast('Sem internet: coleta guardada no aparelho.');
-          pronto('Guardado');
-        } else {
-          botao.disabled = false;
-          if (!erro.sessaoExpirada) toast(erro.message, true);
-        }
-      }
+    const voltar = function () {
+      botao.disabled = false;
+      botao.classList.remove('feito', 'enviando');
+      botao.innerHTML = original;
+      if (aoVoltar) aoVoltar();
     };
-    await enviar();
+    marcar();
+    if (depois) depois();
+    Envio.registrar(d, {
+      ok: function () { botao.classList.remove('enviando'); },
+      offline: function () { botao.classList.remove('enviando'); botao.innerHTML = 'Guardado' + ICONES.certo; toast('Sem internet: arq. ' + t.arquivo + ' guardado no aparelho.'); },
+      precisaConfirmar: voltar,
+      confirmou: marcar,
+      erro: voltar
+    });
   }
 
   /* ---------- Tela inicial do gerente/estoquista ---------- */
@@ -1024,6 +1071,9 @@
   /* ---------- Tela inicial do administrador, CEO e motorista ---------- */
   function desenharInicioGeral(corpo, r, atualizar) {
     const u = Estado.usuario;
+    // Dados novos do servidor: esquece os "Coletado" marcados nesta tela. Se o arquivo voltou
+    // para o CD (ex.: não coube no carro), ele aparece de novo com o botão "Coletar".
+    Estado.coletados = {};
     const podeMontar = u.perfil === 'ADM' || u.perfil === 'CEO';
     const podeMarcar = ['MOTORISTA', 'ADM', 'CEO'].indexOf(u.perfil) >= 0;
     const cards = [
@@ -1180,6 +1230,15 @@
       ativarRota(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarRotaCompacta(corpo, function (nova) { r.rota = nova; desenhar(); });
       ligarCards(corpo, 'rastreia_card_geral', function (novo) { escolhido = novo; desenhar(); });
+      // Atualiza os números só quando a fila de envios terminar (e a pessoa parar de tocar)
+      const atualizarQuandoTerminar = function () {
+        clearTimeout(Estado.timerColeta);
+        const tentar = function () {
+          if (Envio.pendentes()) { Estado.timerColeta = setTimeout(tentar, 1500); return; }
+          if (atualizar && document.body.contains(corpo)) atualizar();
+        };
+        Estado.timerColeta = setTimeout(tentar, 4000);
+      };
       corpo.querySelectorAll('[data-acao-rapida]').forEach(function (b) {
         b.onclick = function () {
           const t = (c ? c.lista : []).filter(function (x) { return x.arquivo === b.dataset.arquivo; })[0];
@@ -1187,13 +1246,13 @@
           const outros = b.parentNode.querySelectorAll('button');
           outros.forEach(function (o) { if (o !== b) o.disabled = true; });
           const ehCd = b.dataset.acaoRapida === 'NO_CD';
+          outros.forEach(function (o) { if (o !== b) o.classList.add('oculto'); });
           registrarRapido(t, b.dataset.acaoRapida, b, ehCd ? 'No CD' : 'Entregue', function () {
-            outros.forEach(function (o) { if (o !== b) o.remove(); });
-            clearTimeout(Estado.timerColeta);
-            Estado.timerColeta = setTimeout(function () { if (atualizar && document.body.contains(corpo)) atualizar(); }, 6000);
+            atualizarQuandoTerminar();
+          }, function () {
+            // servidor recusou ou pediu confirmação: o outro botão volta
+            outros.forEach(function (o) { if (o !== b) { o.classList.remove('oculto'); o.disabled = false; } });
           });
-          // se der erro, libera o outro botão de novo
-          setTimeout(function () { if (!b.classList.contains('feito')) outros.forEach(function (o) { o.disabled = false; }); }, 4000);
         };
       });
       corpo.querySelectorAll('[data-coletei]').forEach(function (b) {
@@ -1203,9 +1262,11 @@
           coletarArquivo(t, b, function () {
             delete c.coletei[t.arquivo];
             (Estado.coletados = Estado.coletados || {})[t.arquivo] = true;
-            // Atualiza os números quando terminar de coletar tudo daqui (ou depois de alguns segundos)
-            clearTimeout(Estado.timerColeta);
-            Estado.timerColeta = setTimeout(function () { if (atualizar && document.body.contains(corpo)) atualizar(); }, Object.keys(c.coletei).length ? 6000 : 800);
+            atualizarQuandoTerminar();
+          }, function () {
+            // servidor recusou: o arquivo continua para coletar
+            c.coletei[t.arquivo] = true;
+            if (Estado.coletados) delete Estado.coletados[t.arquivo];
           });
         };
       });
@@ -1978,12 +2039,34 @@
     const desenharUltimos = function () {
       const caixa = el.querySelector('.ultimos');
       if (!Registro.ultimos.length) { caixa.innerHTML = ''; return; }
-      caixa.innerHTML = blocoHtml('Registrados agora', '<div class="lista-arquivos">' + Registro.ultimos.slice(0, 10).map(function (r) {
-        return '<div class="item-arquivo' + (r.guardado ? ' guardado' : '') + '"><div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(r.arquivo) + '</span>' +
-          (r.guardado ? '<span class="selo aviso">' + ICONES.nuvem + 'Aguardando internet</span>' : seloSituacao(r.status)) + '</div>' +
-          '<div class="item-rota">' + esc(r.texto) + ' <span class="item-tempo">· ' + esc(r.hora) + '</span></div></div>';
+      caixa.innerHTML = blocoHtml('Registrados agora', '<div class="lista-arquivos">' + Registro.ultimos.slice(0, 10).map(function (r, i) {
+        const selo = r.estado === 'enviando' ? '<span class="selo enviando-selo"><span class="girando mini"></span>Enviando...</span>'
+          : r.estado === 'confirmar' ? '<span class="selo aviso">' + ICONES.alerta + 'Confirme</span>'
+          : r.estado === 'erro' ? '<span class="selo erro-selo">' + ICONES.alerta + 'Não gravado</span>'
+          : r.guardado ? '<span class="selo aviso">' + ICONES.nuvem + 'Aguardando internet</span>' : seloSituacao(r.status);
+        return '<div class="item-arquivo' + (r.guardado ? ' guardado' : '') + (r.estado === 'erro' ? ' com-erro' : '') + '"><div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(r.arquivo) + '</span>' + selo + '</div>' +
+          '<div class="item-rota">' + esc(r.texto) + ' <span class="item-tempo">· ' + esc(r.hora) + '</span></div>' +
+          (r.estado === 'erro' ? '<div class="erro-registro">' + esc(r.erro || '') + (r.dados ? ' <button type="button" class="link-desfazer" data-corrigir="' + i + '">Corrigir</button>' : '') + '</div>' : '') +
+          '</div>';
       }).join('') + '</div>');
       ativarBlocos(caixa);
+      caixa.querySelectorAll('[data-corrigir]').forEach(function (b) {
+        b.onclick = function () {
+          const item = Registro.ultimos[Number(b.dataset.corrigir)];
+          if (!item || !item.dados) return;
+          const d = item.dados;
+          Registro.ultimos.splice(Number(b.dataset.corrigir), 1);
+          desenharUltimos();
+          form.arquivo.value = d.arquivo;
+          form.origem_id.value = d.origem_id; form.destino_id.value = d.destino_id;
+          form.total_volumes.value = d.total_volumes; form.vendedor_nome.value = d.vendedor_nome || ''; form.observacao.value = d.observacao || '';
+          desenharVolumes(); atualizarVendedores(); desenharStatus();
+          const radio = form.querySelector('input[name=status][value="' + d.status + '"]');
+          if (radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
+          msg.innerHTML = '<div class="mensagem erro">' + esc(item.erro || '') + '</div>';
+          form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+      });
     };
 
     const limparFormulario = function () {
@@ -1999,39 +2082,6 @@
       atualizarVendedores();
       desenharStatus();
       form.arquivo.focus();
-    };
-
-    const enviar = async function (dados, botao) {
-      try {
-        const r = await chamar('registrar', dados);
-        if (r.precisaConfirmar) {
-          confirmarAvisos(r.avisos, function () {
-            dados.confirmar = true;
-            return enviar(dados, botao);
-          });
-          return;
-        }
-        if (r.nadaMudou) {
-          msg.innerHTML = '<div class="mensagem info">' + esc(r.mensagem) + '</div>';
-          return;
-        }
-        Registro.ultimos.unshift({ arquivo: r.arquivo || dados.arquivo, status: dados.status, texto: (NOMES_STATUS[dados.status] || {}).titulo +
-          (r.total_volumes > 1 ? ' · vol. ' + (r.volumes || []).join(', ') + ' de ' + r.total_volumes : ''), hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
-        toast(r.repetido ? 'Este registro já tinha sido enviado.' : (r.mensagem || 'Registrado.'));
-        if (r.volumes_pendentes > 0) toast(r.volumes_pendentes + ' volume(s) do arquivo ' + r.arquivo + ' ainda não foram lidos nesta etapa.', true);
-        desenharUltimos();
-        limparFormulario();
-      } catch (erro) {
-        if (erro.offline) {
-          Fila.adicionar(dados);
-          Registro.ultimos.unshift({ arquivo: dados.arquivo, status: dados.status, guardado: true, texto: (NOMES_STATUS[dados.status] || {}).titulo, hora: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) });
-          toast('Sem internet: registro guardado no aparelho. Será enviado quando a conexão voltar.');
-          desenharUltimos();
-          limparFormulario();
-        } else if (!erro.sessaoExpirada) {
-          msg.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
-        }
-      }
     };
 
     form.onsubmit = async function (e) {
@@ -2064,12 +2114,28 @@
         id_cliente: novoIdCliente(),
         data_hora_cliente: new Date().toISOString()
       };
-      const botao = form.querySelector('button[type=submit]');
-      botao.disabled = true;
-      botao.textContent = 'Registrando...';
-      await enviar(dados, botao);
-      botao.disabled = false;
-      botao.textContent = 'Registrar';
+      // Rápido: o registro entra na lista "Registrados agora" e o formulário já fica livre para o
+      // próximo arquivo. O envio ao servidor acontece em segundo plano (Envio), um de cada vez.
+      const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const item = { arquivo: arquivo, status: status, estado: 'enviando', hora: hora, dados: dados,
+        texto: (NOMES_STATUS[status] || {}).titulo + (total > 1 ? ' · vol. ' + volumes.join(', ') + ' de ' + total : '') };
+      Registro.ultimos.unshift(item);
+      desenharUltimos();
+      limparFormulario();
+      toast('Arq. ' + arquivo + ' registrado.');
+      const atualizarItem = function (mudancas) { Object.assign(item, mudancas); if (document.body.contains(form)) desenharUltimos(); };
+      Envio.registrar(dados, {
+        ok: function (r) {
+          if (r.nadaMudou) { atualizarItem({ estado: 'ok', texto: r.mensagem }); return; }
+          atualizarItem({ estado: 'ok', texto: (NOMES_STATUS[dados.status] || {}).titulo + (r.total_volumes > 1 ? ' · vol. ' + (r.volumes || []).join(', ') + ' de ' + r.total_volumes : '') });
+          if (r.volumes_pendentes > 0) toast(r.volumes_pendentes + ' volume(s) do arquivo ' + r.arquivo + ' ainda não foram lidos nesta etapa.', true);
+        },
+        offline: function () { atualizarItem({ estado: 'ok', guardado: true }); toast('Sem internet: arq. ' + arquivo + ' guardado no aparelho. Será enviado quando a conexão voltar.'); },
+        precisaConfirmar: function () { atualizarItem({ estado: 'confirmar' }); },
+        confirmou: function () { atualizarItem({ estado: 'enviando' }); },
+        cancelou: function () { atualizarItem({ estado: 'erro', erro: 'Registro cancelado.' }); },
+        erro: function (e) { atualizarItem({ estado: 'erro', erro: e.message }); }
+      });
     };
 
     // ----- Leitura da etiqueta pela foto -----
@@ -2176,11 +2242,11 @@
     else if (!ehCelular) form.arquivo.focus();
   }
 
-  function confirmarAvisos(avisos, aoConfirmar) {
+  function confirmarAvisos(avisos, aoConfirmar, aoCancelar) {
     abrirJanela('Confira antes de registrar',
       '<div class="mensagem aviso"><ul class="lista-avisos">' + avisos.map(function (a) { return '<li>' + esc(a) + '</li>'; }).join('') + '</ul></div>' +
       '<p class="descricao">Se estiver tudo certo, toque em <b>Registrar mesmo assim</b>.</p>',
-      { textoSalvar: 'Registrar mesmo assim', aoSalvar: async function () { setTimeout(aoConfirmar, 0); } });
+      { textoSalvar: 'Registrar mesmo assim', aoSalvar: async function () { setTimeout(aoConfirmar, 0); }, aoCancelar: aoCancelar });
   }
 
   function formOcorrencia(arquivo, depois) {

@@ -893,3 +893,22 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .botao-recebi.botao-entregue:hover { background: #166534; border-color: #166534; }
 .botao-recebi.botao-no-cd.feito { background: transparent; color: var(--c-marrom, #a16207); border: 1.5px solid var(--c-marrom, #a16207); }
 .botao-recebi:disabled:not(.feito) { opacity: .5; cursor: default; }
+
+/* v3.0 — envio em segundo plano */
+.enviando-fila {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 96px; z-index: 60;
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+  background: #1e293b; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px rgba(0, 0, 0, .2);
+}
+@media (min-width: 801px) { .enviando-fila { bottom: 24px; } }
+.botao-recebi.enviando { position: relative; }
+.botao-recebi.enviando::after {
+  content: ''; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%;
+  background: #f59e0b; box-shadow: 0 0 0 2px #fff; animation: pulsar-envio 1s ease-in-out infinite;
+}
+@keyframes pulsar-envio { 50% { opacity: .35; } }
+
+.selo.enviando-selo { background: #f1f5f9; color: #475569; display: inline-flex; align-items: center; gap: 6px; }
+.selo.erro-selo { background: #fee2e2; color: #b91c1c; }
+.item-arquivo.com-erro { border-color: #fca5a5; }
+.erro-registro { margin-top: 6px; font-size: 13px; color: #b91c1c; }
