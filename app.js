@@ -70,7 +70,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '3.2.0';
+  const VERSAO_APP = '3.3.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -446,10 +446,21 @@
     return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
+  /** Para o administrador: erros técnicos nas últimas 24 h ainda não vistos na tela "Erros do sistema". */
+  function avisoErros() {
+    const u = Estado.usuario;
+    if (!u || u.perfil !== 'ADM' || !Estado.resumo) return 0;
+    const n = Number(Estado.resumo.dados.erros_24h) || 0;
+    if (!n) return 0;
+    let visto = '';
+    try { visto = localStorage.getItem('rastreia_erros_vistos') || ''; } catch (e) { /* ignora */ }
+    return visto && Date.now() - Date.parse(visto) < 3600000 ? 0 : n;
+  }
+
   function desenharContadorSino() {
     const cont = document.querySelector('[data-sino] .contador');
     if (!cont || !Estado.resumo) return;
-    const n = (Estado.resumo.dados.atencao || []).length + (avisoBackup() ? 1 : 0);
+    const n = (Estado.resumo.dados.atencao || []).length + (avisoBackup() ? 1 : 0) + (avisoErros() ? 1 : 0);
     cont.textContent = n > 99 ? '99+' : String(n);
     cont.classList.toggle('oculto', n === 0);
     const painel = document.querySelector('.painel-sino');
@@ -463,7 +474,9 @@
     const r = Estado.resumo.dados;
     const itens = r.atencao || [];
     const backup = avisoBackup();
+    const nErros = avisoErros();
     painel.innerHTML = (backup ? '<div class="mensagem aviso">' + ICONES.alerta + ' ' + esc(backup) + '</div>' : '') +
+      (nErros ? '<a class="mensagem aviso link-erros" href="#/config/erros">' + ICONES.alerta + ' ' + nErros + ' erro(s) técnico(s) nas últimas 24 horas. Ver detalhes</a>' : '') +
       '<div class="painel-titulo"><b>Precisam de atenção</b><span>' + itens.length + '</span></div>' +
       '<p class="descricao pequena">Parados há mais de ' + esc(r.dias_alerta_pendente) + ' dias (' + esc(r.dias_alerta_cd) + ' no CD), com volume faltando ou com ocorrência.</p>' +
       (itens.length ? listaArquivosHtml(itens.slice(0, 15), 'ambos') : '<div class="vazio pequeno">Tudo em dia. Nenhum arquivo precisa de atenção.</div>') +
@@ -487,7 +500,8 @@
     '#/config/lojas': paginaLojas,
     '#/config/vendedores': paginaVendedores,
     '#/config/usuarios': paginaUsuarios,
-    '#/config/historico': paginaHistorico
+    '#/config/historico': paginaHistorico,
+    '#/config/erros': paginaErros
   };
 
   function rotear() {
@@ -952,7 +966,7 @@
           toast('Arq. ' + t.arquivo + ' recebido.');
           Envio.registrar(dados, {
             ok: function () { if (botao) botao.classList.remove('enviando'); },
-            offline: function () { if (botao) botao.classList.remove('enviando'); toast('Sem internet: recebimento guardado no aparelho. Será enviado quando a conexão voltar.'); },
+            offline: function (servidor) { if (botao) botao.classList.remove('enviando'); toast((servidor ? 'O servidor não respondeu' : 'Sem internet') + ': recebimento guardado no aparelho. Será enviado sozinho.'); },
             precisaConfirmar: voltar, confirmou: marcar, erro: voltar,
             fimDaFila: function () { if (depois) depois(); }
           });
@@ -965,6 +979,7 @@
    * um de cada vez, enquanto a pessoa continua tocando nos próximos. Só se o servidor
    * recusar (ou pedir confirmação) é que a tela avisa e o botão volta.
    */
+  const ESPERAS_REENVIO = [3000, 8000, 20000];
   const Envio = (function () {
     let cadeia = Promise.resolve();
     let pendentes = 0;
@@ -988,7 +1003,14 @@
       indicador();
       cadeia = cadeia.then(async function () {
         try {
-          const r = await chamar('registrar', d);
+          // Erro temporário do Google: tenta de novo sozinho (o registro tem id próprio, então nunca duplica)
+          let r;
+          for (let tentativa = 0; ; tentativa++) {
+            try { r = await chamar('registrar', d); break; } catch (e) {
+              if (!(e.temporario && !e.sessaoExpirada && navigator.onLine && tentativa < ESPERAS_REENVIO.length)) throw e;
+              await new Promise(function (ok) { setTimeout(ok, ESPERAS_REENVIO[tentativa]); });
+            }
+          }
           if (r.precisaConfirmar) {
             if (cb.precisaConfirmar) cb.precisaConfirmar();
             confirmarAvisos(r.avisos, function () {
@@ -998,10 +1020,11 @@
             }, cb.cancelou);
           } else if (cb.ok) cb.ok(r);
         } catch (erro) {
-          if (erro.offline) {
+          if (erro.offline || erro.temporario) {
+            // Sem internet, ou o Google não respondeu nem depois de tentar de novo: guarda no aparelho e envia depois sozinho
             Fila.adicionar(d);
-            if (cb.offline) cb.offline();
-            else toast('Sem internet: registro guardado no aparelho.');
+            if (cb.offline) cb.offline(erro.temporario && !erro.offline);
+            else toast(erro.temporario ? 'O servidor não respondeu: registro guardado no aparelho. Será enviado sozinho.' : 'Sem internet: registro guardado no aparelho.');
           } else {
             if (!erro.sessaoExpirada) toast('Arq. ' + d.arquivo + ': ' + erro.message, true);
             if (cb.erro) cb.erro(erro);
@@ -1044,7 +1067,7 @@
     if (depois) depois();
     Envio.registrar(d, {
       ok: function () { botao.classList.remove('enviando'); },
-      offline: function () { botao.classList.remove('enviando'); botao.innerHTML = 'Guardado' + ICONES.certo; toast('Sem internet: arq. ' + t.arquivo + ' guardado no aparelho.'); },
+      offline: function (servidor) { botao.classList.remove('enviando'); botao.innerHTML = 'Guardado' + ICONES.certo; toast((servidor ? 'O servidor não respondeu' : 'Sem internet') + ': arq. ' + t.arquivo + ' guardado no aparelho. Será enviado sozinho.'); },
       precisaConfirmar: voltar,
       confirmou: marcar,
       erro: voltar
@@ -1163,6 +1186,7 @@
       if (Estado.paradaAberta !== localAqui + r.rota.ultima_hora) {
         Estado.paradaAberta = localAqui + r.rota.ultima_hora;
         escolhido = card.id;
+        try { localStorage.setItem('rastreia_card_geral', card.id); } catch (e) { /* ignora */ } // continua aberto depois de atualizar
         Estado.animarPainel = true;
       }
     };
@@ -1694,7 +1718,7 @@
             if (r.precisaConfirmar) alterar(item.dados.id_cliente, { estado: 'confirmar', avisos: r.avisos });
             else { remover(item.dados.id_cliente); enviados++; }
           } catch (erro) {
-            if (erro.offline) break;
+            if (erro.offline || erro.temporario) break; // tenta de novo no próximo ciclo (1 minuto)
             if (erro.sessaoExpirada) { sair(erro.message); break; }
             alterar(item.dados.id_cliente, { estado: 'erro', mensagem: erro.message });
           }
@@ -2168,7 +2192,7 @@
           atualizarItem({ estado: 'ok', texto: (NOMES_STATUS[dados.status] || {}).titulo + (r.total_volumes > 1 ? ' · vol. ' + (r.volumes || []).join(', ') + ' de ' + r.total_volumes : '') });
           if (r.volumes_pendentes > 0) toast(r.volumes_pendentes + ' volume(s) do arquivo ' + r.arquivo + ' ainda não foram lidos nesta etapa.', true);
         },
-        offline: function () { atualizarItem({ estado: 'ok', guardado: true }); toast('Sem internet: arq. ' + arquivo + ' guardado no aparelho. Será enviado quando a conexão voltar.'); },
+        offline: function (servidor) { atualizarItem({ estado: 'ok', guardado: true }); toast((servidor ? 'O servidor não respondeu' : 'Sem internet') + ': arq. ' + arquivo + ' guardado no aparelho. Será enviado sozinho.'); },
         precisaConfirmar: function () { atualizarItem({ estado: 'confirmar' }); },
         confirmou: function () { atualizarItem({ estado: 'enviando' }); },
         cancelou: function () { atualizarItem({ estado: 'erro', erro: 'Registro cancelado.' }); },
@@ -2919,7 +2943,8 @@
       ['#/config/parametros', 'Parâmetros'],
       ['#/config/aparencia', 'Aparência'],
       ['#/config/leitura', 'Leitura de etiquetas'],
-      ['#/config/historico', 'Histórico']
+      ['#/config/historico', 'Histórico'],
+      ['#/config/erros', 'Erros do sistema']
     ];
     el.innerHTML =
       '<h2>Configurações</h2><p class="descricao">Cadastros e ajustes do sistema (somente administrador).</p>' +
@@ -3293,6 +3318,82 @@
     }
   }
 
+  /* ---------- Erros do sistema (administrador) ---------- */
+  async function paginaErros(el) {
+    const corpo = cabecalhoConfig(el, '#/config/erros');
+    try { localStorage.setItem('rastreia_erros_vistos', new Date().toISOString()); } catch (e) { /* ignora */ }
+    desenharContadorSino();
+    corpo.innerHTML = '<div class="barra-acoes"><span class="descricao" style="margin:0">Falhas técnicas (servidor do Google, internet, erro de programa) dos últimos 7 dias. ' +
+      'Avisos de regra, como "origem e destino iguais", não aparecem aqui.</span><span class="espaco"></span>' +
+      '<button class="botao secundario" data-atualizar-erros>' + ICONES.atualizar + 'Atualizar</button></div><div class="lista-erros">' + carregandoHtml('Carregando...') + '</div>';
+    const lista = corpo.querySelector('.lista-erros');
+    const carregar = async function () {
+      lista.innerHTML = carregandoHtml('Carregando...');
+      try {
+        const erros = await chamar('listarErros', { dias: 7 });
+        if (!erros.length) { lista.innerHTML = '<div class="vazio">' + ICONES.certo + ' Nenhum erro técnico nos últimos 7 dias.</div>'; return; }
+        lista.innerHTML = '<p class="descricao pequena"><b>' + erros.length + '</b> erro(s). Os registros que falharam por erro temporário foram reenviados sozinhos.</p>' +
+          '<table class="tabela tabela-erros"><thead><tr><th>Quando</th><th>Onde</th><th>Quem</th><th>O que estava fazendo</th><th>Erro</th></tr></thead><tbody>' +
+          erros.map(function (e) {
+            const d = new Date(e.data_hora);
+            return '<tr><td>' + esc(isNaN(d) ? e.data_hora : d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })) + '</td>' +
+              '<td><span class="selo ' + (e.origem === 'SERVIDOR' ? 'erro-selo' : 'aviso') + '">' + (e.origem === 'SERVIDOR' ? 'Servidor' : 'Aparelho') + '</span></td>' +
+              '<td>' + esc(e.usuario_nome || '—') + (e.perfil ? '<br><small>' + esc(PERFIS[e.perfil] || e.perfil) + '</small>' : '') + '</td>' +
+              '<td>' + esc(e.acao || '—') + '</td>' +
+              '<td>' + esc(e.mensagem) + (e.detalhe || e.aparelho ? '<details><summary>Detalhes</summary><pre>' + esc((e.detalhe || '') + (e.aparelho ? '\n' + e.aparelho : '') + (e.versao_app ? '\nVersão ' + e.versao_app : '')) + '</pre></details>' : '') + '</td></tr>';
+          }).join('') + '</tbody></table>';
+      } catch (erro) {
+        lista.innerHTML = '<div class="mensagem erro">' + esc(erro.message) + '</div>';
+      }
+    };
+    corpo.querySelector('[data-atualizar-erros]').onclick = carregar;
+    carregar();
+  }
+
+  /* =========================================================
+   *  REGISTRO DE ERROS TÉCNICOS (aparelho → aba Erros da planilha)
+   *  Guarda no aparelho e envia quando houver internet. Só erros técnicos:
+   *  falha do servidor do Google, erro de programa. Avisos de regra não entram.
+   * ========================================================= */
+  const RegistroErros = (function () {
+    const CHAVE = 'rastreia_erros';
+    let enviando = false;
+    const ler = function () { try { return JSON.parse(localStorage.getItem(CHAVE) || '[]'); } catch (e) { return []; } };
+    const gravar = function (lista) { try { localStorage.setItem(CHAVE, JSON.stringify(lista.slice(-30))); } catch (e) { /* ignora */ } };
+    function guardar(info) {
+      const lista = ler();
+      const msg = String(info.mensagem || '').slice(0, 500);
+      // não repete o mesmo erro várias vezes seguidas
+      const ultimo = lista[lista.length - 1];
+      if (ultimo && ultimo.mensagem === msg && Date.now() - Date.parse(ultimo.quando) < 60000) return;
+      lista.push({ quando: new Date().toISOString(), acao: info.acao || '', mensagem: msg, detalhe: String(info.detalhe || '').slice(0, 1000),
+        aparelho: (navigator.userAgent || '').slice(0, 200), versao: VERSAO_APP });
+      gravar(lista);
+      clearTimeout(RegistroErros._espera);
+      RegistroErros._espera = setTimeout(enviar, 5000);
+    }
+    async function enviar() {
+      const lista = ler();
+      if (!lista.length || enviando || !navigator.onLine || !Estado.usuario) return;
+      enviando = true;
+      try {
+        await Api.chamar('registrarErrosCliente', { erros: lista.slice(0, 20) });
+        gravar(ler().slice(Math.min(20, lista.length)));
+      } catch (e) { /* tenta de novo mais tarde */ }
+      enviando = false;
+    }
+    return { guardar: guardar, enviar: enviar };
+  })();
+  Api.aoErroTecnico(function (info) { RegistroErros.guardar(info); });
+  window.addEventListener('error', function (ev) {
+    RegistroErros.guardar({ acao: 'tela', mensagem: ev.message || 'Erro na tela', detalhe: (ev.filename || '') + ':' + (ev.lineno || '') + ' ' + ((ev.error && ev.error.stack) || '') });
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    const r = ev.reason || {};
+    if (r.sessaoExpirada || r.offline) return;
+    RegistroErros.guardar({ acao: 'tela', mensagem: r.message || String(r), detalhe: r.stack || '' });
+  });
+
   /* =========================================================
    *  INICIALIZAÇÃO
    * ========================================================= */
@@ -3304,6 +3405,7 @@
     aplicarTema((lerCacheBase() || {}).config);
     window.addEventListener('online', function () { if (Estado.usuario) Fila.sincronizar(); });
     setInterval(function () { if (Estado.usuario && navigator.onLine) Fila.sincronizar(); }, 60000);
+    setInterval(function () { RegistroErros.enviar(); }, 5 * 60000);
     window.addEventListener('online', atualizarFaixaOffline);
     window.addEventListener('offline', atualizarFaixaOffline);
     atualizarFaixaOffline();
@@ -3320,6 +3422,7 @@
       await recarregarBase();
       rotear();
       Fila.sincronizar();
+      RegistroErros.enviar();
     } catch (erro) {
       if (erro.sessaoExpirada) return;
       const cache = lerCacheBase();
