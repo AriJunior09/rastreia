@@ -41,6 +41,8 @@
     baixar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg>',
     rota: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16"/></svg>',
     atualizar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>',
+    fechar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
     mais: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>'
   };
 
@@ -70,7 +72,7 @@
   }
 
   // Versão do app (aparece no rodapé do menu). Atualizar a cada nova versão.
-  const VERSAO_APP = '3.4.0';
+  const VERSAO_APP = '3.5.0';
 
   function toast(mensagem, erro) {
     let caixa = document.getElementById('avisos-flutuantes');
@@ -787,7 +789,7 @@
     const carregar = async function (manual) {
       if (carregando) return;
       // Com registros ainda indo para o servidor, a atualização automática espera (senão os botões voltariam)
-      if (!manual && Envio.pendentes()) return;
+      if (!manual && (Envio.pendentes() || Adiados.pendentes())) return;
       carregando = true;
       info.innerHTML = '<span class="girando mini"></span>Atualizando...';
       try {
@@ -1047,12 +1049,14 @@
 
   /** Um toque registra a situação (Com motorista, No CD, Entregue) com todos os volumes, sem janela.
    *  A tela muda na hora; o envio acontece em segundo plano (Envio). */
-  function registrarRapido(t, status, botao, textoFeito, depois, aoVoltar) {
+  function registrarRapido(t, status, botao, textoFeito, depois, aoVoltar, extra) {
+    extra = extra || {};
     const cds = lojasOrdenadas(function (l) { return l.tipo === 'CD' && l.ativo; });
     const d = {
       arquivo: t.arquivo, status: status, cd_id: status === 'NO_CD' && cds.length ? cds[0].id : '', forma_registro: window.matchMedia('(pointer: coarse)').matches ? 'MANUAL' : 'WEB',
       id_cliente: novoIdCliente(), data_hora_cliente: new Date().toISOString(),
-      origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: []
+      origem_id: t.origem_id, destino_id: t.destino_id, total_volumes: t.total_volumes, volumes: [],
+      observacao: extra.observacao || ''
     };
     const original = botao.innerHTML;
     const marcar = function () {
@@ -1066,15 +1070,188 @@
       botao.innerHTML = original;
       if (aoVoltar) aoVoltar();
     };
+    const enviar = function () {
+      if (depois) depois();
+      Envio.registrar(d, {
+        ok: function () { botao.classList.remove('enviando'); },
+        offline: function (servidor) { botao.classList.remove('enviando'); botao.innerHTML = 'Guardado' + ICONES.certo; toast((servidor ? 'O servidor não respondeu' : 'Sem internet') + ': arq. ' + t.arquivo + ' guardado no aparelho. Será enviado sozinho.'); },
+        precisaConfirmar: voltar,
+        confirmou: marcar,
+        erro: voltar
+      });
+    };
     marcar();
-    if (depois) depois();
-    Envio.registrar(d, {
-      ok: function () { botao.classList.remove('enviando'); },
-      offline: function (servidor) { botao.classList.remove('enviando'); botao.innerHTML = 'Guardado' + ICONES.certo; toast((servidor ? 'O servidor não respondeu' : 'Sem internet') + ': arq. ' + t.arquivo + ' guardado no aparelho. Será enviado sozinho.'); },
-      precisaConfirmar: voltar,
-      confirmou: marcar,
-      erro: voltar
+    if (extra.adiar) {
+      // Só envia depois do tempo do "Desfazer"; se tocar em Desfazer, nada é gravado
+      Adiados.agendar(d, extra.adiar, 'Arq. ' + t.arquivo + ' ' + textoFeito.toLowerCase(), enviar, voltar);
+    } else {
+      enviar();
+    }
+  }
+
+  /* ---------- Registros com "Desfazer" (o envio espera alguns segundos) ----------
+   * Se a pessoa fechar o app antes do tempo, o registro vai para a fila do aparelho
+   * e é enviado na próxima abertura. Nada se perde.
+   */
+  const Adiados = (function () {
+    const lista = {};
+    let seq = 0;
+    function agendar(d, ms, texto, enviar, desfazer) {
+      const id = ++seq;
+      const aviso = document.createElement('div');
+      aviso.className = 'aviso-desfazer';
+      let resta = Math.round(ms / 1000);
+      aviso.innerHTML = '<span class="contagem">' + resta + '</span><span class="texto">' + esc(texto) + '</span><button type="button">Desfazer</button>';
+      let caixa = document.getElementById('avisos-desfazer');
+      if (!caixa) { caixa = document.createElement('div'); caixa.id = 'avisos-desfazer'; document.body.appendChild(caixa); }
+      // Com a gaveta aberta, o aviso fica no rodapé dela (sem cobrir os arquivos)
+      const gavetaAberta = document.querySelector('.gaveta-fundo .gaveta');
+      if (gavetaAberta && caixa.parentNode !== gavetaAberta) gavetaAberta.appendChild(caixa);
+      caixa.appendChild(aviso);
+      const relogio = setInterval(function () { resta--; aviso.querySelector('.contagem').textContent = Math.max(resta, 0); }, 1000);
+      const fim = function () { clearInterval(relogio); clearTimeout(item.timer); aviso.remove(); delete lista[id]; };
+      const item = { d: d, timer: setTimeout(function () { fim(); enviar(); }, ms) };
+      lista[id] = item;
+      aviso.querySelector('button').onclick = function () { fim(); desfazer(); toast(texto.replace(/ (coletado|entregue)$/, '') + ': desfeito.'); };
+    }
+    // Fechou o app / trocou de página antes do tempo: guarda os registros na fila do aparelho
+    window.addEventListener('pagehide', function () {
+      Object.keys(lista).forEach(function (id) { clearTimeout(lista[id].timer); Fila.adicionar(lista[id].d); delete lista[id]; });
     });
+    return { agendar: agendar, pendentes: function () { return Object.keys(lista).length; } };
+  })();
+
+  /* ---------- Gaveta da loja (toca na linha da tabela "Onde o motorista precisa passar") ----------
+   * Duas abas: Coletar (separados na loja) e Entregar (no carro, para esta loja).
+   * No CD: Coletar (no CD) e Deixar no CD (no carro). O motorista tem os botões em qualquer loja;
+   * administrador e CEO só consultam.
+   */
+  function abrirGavetaLoja(lojaId, r, aoRegistrar) {
+    const u = Estado.usuario;
+    const loja = lojaPorId(lojaId);
+    if (!loja) return;
+    const ehCd = loja.tipo === 'CD';
+    const podeAgir = u.perfil === 'MOTORISTA';
+    const naParada = !!(r.rota && r.rota.estado === 'NA_PARADA' && r.rota.data === diaIso(new Date()) && r.rota.paradas[r.rota.indice].loja_id === lojaId);
+    const doCd = function (t) { return t.status === 'NO_CD' && (!t.local_atual_id || t.local_atual_id === lojaId); };
+    const filtroColetar = ehCd ? doCd : function (t) { return t.status === 'SEPARADA' && t.origem_id === lojaId; };
+    const filtroEntregar = ehCd ? function (t) { return t.status === 'COM_MOTORISTA'; } : function (t) { return t.status === 'COM_MOTORISTA' && t.destino_id === lojaId; };
+    const unicos = function (lista) { const vistos = {}; return lista.filter(function (t) { if (vistos[t.arquivo]) return false; vistos[t.arquivo] = true; return true; }); };
+    // Mostra na hora com os dados da tela inicial; depois confirma com o servidor (lista completa)
+    const dados = {
+      coletar: unicos((ehCd ? r.lista_cd : r.lista_coleta || []).filter(filtroColetar)),
+      entregar: unicos((r.lista_motorista || []).filter(filtroEntregar))
+    };
+    const feitos = {};
+    let aba = dados.coletar.length || !dados.entregar.length ? 'coletar' : 'entregar';
+
+    document.querySelectorAll('.gaveta-fundo').forEach(function (g) { g.remove(); });
+    const fundo = document.createElement('div');
+    fundo.className = 'gaveta-fundo';
+    fundo.innerHTML = '<div class="gaveta" role="dialog" aria-modal="true" aria-label="' + esc(loja.nome) + '">' +
+      '<div class="gaveta-puxador" aria-hidden="true"></div>' +
+      '<div class="gaveta-topo"><div><b>' + esc(nomeLojaCurto(lojaId)) + '</b><div class="descricao pequena">' +
+        esc([loja.cidade, loja.gerente ? 'Gerente ' + loja.gerente : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+        '<button type="button" class="botao-icone" data-fechar-gaveta aria-label="Fechar">' + ICONES.fechar + '</button></div>' +
+      '<div class="gaveta-abas"></div><div class="gaveta-lista"></div></div>';
+    document.body.appendChild(fundo);
+    document.body.classList.add('sem-rolagem');
+    const gaveta = fundo.querySelector('.gaveta');
+    requestAnimationFrame(function () { fundo.classList.add('aberta'); });
+
+    const fechar = function () {
+      // avisos de "Desfazer" ainda contando voltam para a tela principal
+      const avisos = fundo.querySelector('#avisos-desfazer');
+      if (avisos) document.body.appendChild(avisos);
+      fundo.classList.remove('aberta');
+      document.body.classList.remove('sem-rolagem');
+      setTimeout(function () { fundo.remove(); }, 200);
+      document.removeEventListener('keydown', teclaEsc);
+    };
+    const teclaEsc = function (e) { if (e.key === 'Escape') fechar(); };
+    document.addEventListener('keydown', teclaEsc);
+    fundo.addEventListener('mousedown', function (e) { if (e.target === fundo) fechar(); });
+    fundo.querySelector('[data-fechar-gaveta]').onclick = fechar;
+    // Arrastar o puxador para baixo fecha
+    let inicioY = null;
+    const puxador = fundo.querySelector('.gaveta-puxador');
+    [puxador, fundo.querySelector('.gaveta-topo')].forEach(function (alvo) {
+      alvo.addEventListener('touchstart', function (e) { inicioY = e.touches[0].clientY; }, { passive: true });
+      alvo.addEventListener('touchmove', function (e) {
+        if (inicioY === null) return;
+        const dy = Math.max(0, e.touches[0].clientY - inicioY);
+        gaveta.style.transform = 'translateY(' + dy + 'px)';
+      }, { passive: true });
+      alvo.addEventListener('touchend', function (e) {
+        if (inicioY === null) return;
+        const dy = e.changedTouches[0].clientY - inicioY;
+        inicioY = null;
+        gaveta.style.transform = '';
+        if (dy > 90) fechar();
+      });
+    });
+
+    const nomes = ehCd ? { coletar: '↑ Coletar', entregar: '↓ Deixar no CD' } : { coletar: '↑ Coletar', entregar: '↓ Entregar' };
+    const desenhar = function () {
+      fundo.querySelector('.gaveta-abas').innerHTML = ['coletar', 'entregar'].map(function (a) {
+        return '<button type="button" class="gaveta-aba ' + a + (aba === a ? ' ativa' : '') + '" data-aba="' + a + '">' + nomes[a] + ' (' + dados[a].length + ')</button>';
+      }).join('');
+      fundo.querySelectorAll('[data-aba]').forEach(function (b) { b.onclick = function () { aba = b.dataset.aba; desenhar(); }; });
+      const itens = dados[aba];
+      const acao = aba === 'coletar' ? 'COM_MOTORISTA' : (ehCd ? 'NO_CD' : 'ENTREGUE');
+      const rotulo = aba === 'coletar' ? 'Coletar' : (ehCd ? 'Deixar no CD' : 'Entregue');
+      const feito = aba === 'coletar' ? 'Coletado' : (ehCd ? 'No CD' : 'Entregue');
+      const lista = fundo.querySelector('.gaveta-lista');
+      lista.innerHTML = (podeAgir && !naParada && itens.length ? '<div class="mensagem info pequena">' + ICONES.info + ' ' + esc(nomeLojaCurto(lojaId)) + ' não é a parada atual da rota. O registro fica marcado como "fora da parada".</div>' : '') +
+        (itens.length ? itens.map(function (t) {
+          const outra = aba === 'coletar' ? 'Para <b>' + esc(nomeLojaCurto(t.destino_id)) + '</b>' : 'De <b>' + esc(nomeLojaCurto(t.origem_id)) + '</b>' + (ehCd ? ' → ' + esc(nomeLojaCurto(t.destino_id)) : '');
+          const vol = Number(t.total_volumes) || 1;
+          const chips = [];
+          if (t.vendedor_nome) chips.push('<span class="selo vendedor">' + ICONES.pessoa + esc(t.vendedor_nome) + '</span>');
+          if (t.volumes_pendentes > 0) chips.push('<span class="selo erro">' + t.volumes_pendentes + ' volume(s) faltando</span>');
+          if (t.ocorrencia) chips.push('<span class="selo erro">Ocorrência</span>');
+          if (t.atrasado) chips.push('<span class="selo aviso">Atrasado</span>');
+          const botao = podeAgir
+            ? (feitos[t.arquivo]
+              ? '<button type="button" class="botao-recebi feito" disabled>' + feitos[t.arquivo] + ICONES.certo + '</button>'
+              : '<button type="button" class="botao-recebi ' + (aba === 'coletar' ? 'botao-coletei' : (ehCd ? 'botao-no-cd' : 'botao-entregue')) + '" data-gaveta-acao="' + esc(t.arquivo) + '">' + rotulo + (ehCd && aba === 'entregar' ? ICONES.armazem : ICONES.certo) + '</button>')
+            : '';
+          return '<div class="gaveta-item"><div class="item-topo"><span class="numero-arquivo">Arq. ' + esc(t.arquivo) + '</span><span class="item-tempo">' + esc(tempoTexto(t.dias)) + '</span></div>' +
+            '<div class="item-rota">' + outra + ' · ' + vol + (vol > 1 ? ' volumes' : ' volume') + '</div>' +
+            (chips.length ? '<div class="lista-chips">' + chips.join('') + '</div>' : '') +
+            (botao ? '<div class="gaveta-acao">' + botao + '</div>' : '') + '</div>';
+        }).join('') : '<div class="vazio">' + (aba === 'coletar' ? 'Nada para coletar aqui.' : (ehCd ? 'Nenhum arquivo no carro.' : 'Nenhum arquivo para entregar aqui.')) + '</div>');
+      lista.querySelectorAll('[data-gaveta-acao]').forEach(function (b) {
+        b.onclick = function () {
+          const t = itens.filter(function (x) { return x.arquivo === b.dataset.gavetaAcao; })[0];
+          if (!t) return;
+          registrarRapido(t, acao, b, feito, function () {
+            feitos[t.arquivo] = feito;
+            (Estado.coletados = Estado.coletados || {})[t.arquivo] = true;
+            if (aoRegistrar) aoRegistrar();
+          }, function () {
+            delete feitos[t.arquivo];
+            if (Estado.coletados) delete Estado.coletados[t.arquivo];
+          }, {
+            adiar: acao === 'ENTREGUE' ? 12000 : 8000,
+            observacao: naParada ? '' : 'Registrado fora da parada da rota.'
+          });
+          feitos[t.arquivo] = feito; // durante o "Desfazer" o botão continua marcado ao trocar de aba
+        };
+      });
+    };
+    desenhar();
+
+    // Lista completa do servidor (a tela inicial traz no máximo 50 de cada)
+    Promise.all([
+      chamar('listarTransferencias', ehCd ? { situacao: 'NO_CD' } : { origem_id: lojaId, situacao: 'SEPARADA' }),
+      chamar('listarTransferencias', ehCd ? { situacao: 'COM_MOTORISTA' } : { destino_id: lojaId, situacao: 'COM_MOTORISTA' })
+    ]).then(function (res) {
+      if (!document.body.contains(fundo)) return;
+      dados.coletar = unicos(res[0].itens.filter(filtroColetar));
+      dados.entregar = unicos(res[1].itens.filter(filtroEntregar));
+      desenhar();
+    }).catch(function () { /* fica com os dados da tela inicial */ });
   }
 
   /* ---------- Tela inicial do gerente/estoquista ---------- */
@@ -1320,7 +1497,7 @@
       const atualizarQuandoTerminar = function () {
         clearTimeout(Estado.timerColeta);
         const tentar = function () {
-          if (Envio.pendentes()) { Estado.timerColeta = setTimeout(tentar, 1500); return; }
+          if (Envio.pendentes() || Adiados.pendentes()) { Estado.timerColeta = setTimeout(tentar, 1500); return; }
           if (atualizar && document.body.contains(corpo)) atualizar();
         };
         Estado.timerColeta = setTimeout(tentar, 4000);
@@ -1367,7 +1544,14 @@
         };
       });
       corpo.querySelectorAll('[data-linha-loja]').forEach(function (lin) {
-        if (!m.ativo) return;
+        if (!m.ativo) {
+          lin.classList.add('clicavel');
+          lin.setAttribute('role', 'button');
+          lin.tabIndex = 0;
+          lin.onclick = function () { abrirGavetaLoja(lin.dataset.linhaLoja, r, atualizarQuandoTerminar); };
+          lin.onkeydown = function (e) { if (e.key === 'Enter') lin.onclick(); };
+          return;
+        }
         lin.onclick = function (ev) {
           if (ev.target.matches('input')) return;
           const cx = lin.querySelector('input[data-loja-rota]');

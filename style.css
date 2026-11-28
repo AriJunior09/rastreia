@@ -921,3 +921,42 @@ a.item-arquivo:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, .12); }
 .tabela-erros td { vertical-align: top; font-size: 13px; }
 .tabela-erros pre { white-space: pre-wrap; word-break: break-word; font-size: 11px; background: #f8fafc; padding: 8px; border-radius: 6px; max-height: 220px; overflow: auto; }
 .link-erros { display: block; text-decoration: none; margin-bottom: 8px; }
+
+/* v3.5 — gaveta da loja (toque na linha da tabela) e "Desfazer" */
+.linha-loja.clicavel { cursor: pointer; border-radius: 8px; transition: background .15s; }
+.linha-loja.clicavel:hover, .linha-loja.clicavel:focus-visible { background: var(--fundo, #f1f5f9); outline: none; }
+.faixa-cd.clicavel { cursor: pointer; }
+body.sem-rolagem { overflow: hidden; }
+.gaveta-fundo { position: fixed; inset: 0; z-index: 70; background: rgba(15, 23, 42, 0); display: flex; align-items: flex-end; justify-content: center; transition: background .2s; }
+.gaveta-fundo.aberta { background: rgba(15, 23, 42, .45); }
+.gaveta {
+  width: 100%; max-width: 560px; max-height: 82vh; display: flex; flex-direction: column; background: var(--cartao);
+  border-radius: 18px 18px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, .18); transform: translateY(100%); transition: transform .22s ease-out;
+  padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.gaveta-fundo.aberta .gaveta { transform: translateY(0); }
+@media (min-width: 801px) { .gaveta-fundo { align-items: center; } .gaveta { border-radius: 18px; max-height: 80vh; } }
+.gaveta-puxador { width: 44px; height: 5px; border-radius: 5px; background: var(--borda); margin: 2px auto 10px; flex: none; }
+.gaveta-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex: none; }
+.gaveta-topo b { font-size: 18px; }
+.gaveta-topo .descricao { margin: 2px 0 0; }
+.botao-icone { background: none; border: 0; padding: 6px; border-radius: 8px; cursor: pointer; color: var(--texto-suave); }
+.botao-icone svg { width: 22px; height: 22px; }
+.gaveta-abas { display: flex; margin: 12px 0 8px; border-bottom: 1px solid var(--borda); flex: none; }
+.gaveta-aba { flex: 1; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 6px; font: inherit; font-size: 14px; font-weight: 600; color: var(--texto-suave); cursor: pointer; }
+.gaveta-aba.coletar.ativa { border-color: var(--c-laranja, #ea580c); color: var(--c-laranja, #ea580c); }
+.gaveta-aba.entregar.ativa { border-color: #15803d; color: #15803d; }
+.gaveta-lista { overflow-y: auto; overscroll-behavior: contain; flex: 1; padding-bottom: 6px; }
+.gaveta-lista .mensagem { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; }
+.gaveta-lista .mensagem svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.gaveta-item { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; margin: 8px 0; background: var(--cartao); }
+.gaveta-item .item-topo { display: flex; justify-content: space-between; align-items: baseline; }
+.gaveta-acao { display: flex; justify-content: flex-end; margin-top: 8px; }
+#avisos-desfazer { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 80; display: flex; flex-direction: column; gap: 8px; width: min(420px, calc(100vw - 24px)); }
+@media (min-width: 801px) { #avisos-desfazer { bottom: 24px; } }
+.aviso-desfazer { display: flex; align-items: center; gap: 10px; background: #1e293b; color: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 22px rgba(0, 0, 0, .25); font-size: 14px; }
+.aviso-desfazer .contagem { width: 28px; height: 28px; border-radius: 50%; border: 2.5px solid #5eead4; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex: none; }
+.aviso-desfazer .texto { flex: 1; }
+.aviso-desfazer button { background: none; border: 0; color: #5eead4; font: inherit; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; cursor: pointer; padding: 6px 4px; }
+.gaveta #avisos-desfazer { position: static; transform: none; width: auto; margin-top: 8px; flex: none; }
+.gaveta #avisos-desfazer:empty { display: none; }
